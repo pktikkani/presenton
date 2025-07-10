@@ -30,7 +30,8 @@ def get_llm_provider_url_or():
 
 
 def get_selected_llm_provider() -> SelectedLLMProvider:
-    return SelectedLLMProvider(os.getenv("LLM"))
+    # Simplified: Always use OpenAI for your use case
+    return SelectedLLMProvider.OPENAI
 
 
 async def list_available_custom_models(
@@ -84,45 +85,18 @@ def get_llm_client():
 
 
 def get_large_model():
-    selected_llm = get_selected_llm_provider()
-    if selected_llm == SelectedLLMProvider.OPENAI:
-        return "gpt-4.1"
-    elif selected_llm == SelectedLLMProvider.GOOGLE:
-        return "gemini-2.0-flash"
-    elif selected_llm == SelectedLLMProvider.OLLAMA:
-        return os.getenv("OLLAMA_MODEL")
-    elif selected_llm == SelectedLLMProvider.CUSTOM:
-        return os.getenv("CUSTOM_MODEL")
-    else:
-        raise ValueError(f"Invalid LLM model")
+    # Simplified for OpenAI only - using gpt-4o-mini as default
+    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 def get_small_model():
-    selected_llm = get_selected_llm_provider()
-    if selected_llm == SelectedLLMProvider.OPENAI:
-        return "gpt-4.1-mini"
-    elif selected_llm == SelectedLLMProvider.GOOGLE:
-        return "gemini-2.0-flash"
-    elif selected_llm == SelectedLLMProvider.OLLAMA:
-        return os.getenv("OLLAMA_MODEL")
-    elif selected_llm == SelectedLLMProvider.CUSTOM:
-        return os.getenv("CUSTOM_MODEL")
-    else:
-        raise ValueError(f"Invalid LLM model")
+    # Simplified for OpenAI only - using gpt-4o-mini
+    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 def get_nano_model():
-    selected_llm = get_selected_llm_provider()
-    if selected_llm == SelectedLLMProvider.OPENAI:
-        return "gpt-4.1-nano"
-    elif selected_llm == SelectedLLMProvider.GOOGLE:
-        return "gemini-2.0-flash"
-    elif selected_llm == SelectedLLMProvider.OLLAMA:
-        return os.getenv("OLLAMA_MODEL")
-    elif selected_llm == SelectedLLMProvider.CUSTOM:
-        return os.getenv("CUSTOM_MODEL")
-    else:
-        raise ValueError(f"Invalid LLM model")
+    # Simplified for OpenAI only - using gpt-4o-mini
+    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 async def list_pulled_ollama_models() -> list[OllamaModelStatusResponse]:

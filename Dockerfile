@@ -1,12 +1,19 @@
 FROM python:3.11-slim-bookworm
 
-# Install Node.js and npm
+# Install Node.js and npm and build dependencies
 RUN apt-get update && apt-get install -y \
     nodejs \  
     npm \
     nginx \
     curl \
-    redis-server
+    redis-server \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+# Add Rust to PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Create a working directory
 WORKDIR /app  
@@ -20,7 +27,15 @@ RUN curl -fsSL https://ollama.com/install.sh | sh
 
 # Install dependencies for FastAPI
 COPY servers/fastapi/requirements.txt ./
+# Install maturin first for building Rust-based packages
+RUN pip install maturin
 RUN pip install -r requirements.txt
+
+# Manually build and install fastembed-vectorstore
+RUN git clone https://github.com/sauravniraula/fastembed_vectorstore /tmp/fastembed_vectorstore && \
+    cd /tmp/fastembed_vectorstore && \
+    maturin develop --release && \
+    rm -rf /tmp/fastembed_vectorstore
 
 # Install dependencies for Next.js
 WORKDIR /app/servers/nextjs

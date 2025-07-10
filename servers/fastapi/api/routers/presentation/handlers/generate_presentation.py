@@ -1,6 +1,7 @@
 import json
+import os
 from typing import List
-import uuid, aiohttp
+import uuid, aiohttp, asyncio
 from fastapi import HTTPException
 from api.models import LogMetadata
 from api.routers.presentation.handlers.export_as_pptx import ExportAsPptxHandler
@@ -45,12 +46,6 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
         TEMP_FILE_SERVICE.cleanup_temp_dir(self.temp_dir)
 
     async def post(self, logging_service: LoggingService, log_metadata: LogMetadata):
-        if is_ollama_selected() or is_custom_llm_selected():
-            raise HTTPException(
-                status_code=400,
-                detail="Ollama is not currently supported for this endpoint",
-            )
-
         documents_and_images_path = await UploadFilesHandler(
             documents=self.data.documents,
             images=None,
@@ -67,12 +62,17 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
 
         print("-" * 40)
         print("Generating PPT Outline")
+        print(f"Requested slides: {self.data.n_slides}")
+        print(f"Language: {self.data.language}")
         presentation_content = await generate_ppt_content(
             self.data.prompt,
             self.data.n_slides,
             self.data.language,
             summary,
         )
+        print(f"Generated slides count: {len(presentation_content.slides)}")
+        for i, slide in enumerate(presentation_content.slides):
+            print(f"  Slide {i+1}: {slide.title}")
 
         print("-" * 40)
         print("Generating Presentation")
@@ -86,17 +86,150 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
 
         print("-" * 40)
         print("Parsing Presentation")
-        presentation_json = json.loads(presentation_text)
+        print(f"Raw presentation text length: {len(presentation_text)}")
+        
+        try:
+            presentation_json = json.loads(presentation_text)
+            print(f"Successfully parsed JSON with {len(presentation_json.get('slides', []))} slides")
+        except json.JSONDecodeError as e:
+            print(f"JSON Parse Error: {e}")
+            print(f"First 500 chars of response: {presentation_text[:500]}")
+            raise
 
         slide_models: List[SlideModel] = []
         for i, slide in enumerate(presentation_json["slides"]):
+            print(f"\nProcessing slide {i+1}/{len(presentation_json['slides'])}")
+            print(f"Slide type: {slide.get('type', 'unknown')}")
+            
             slide["index"] = i
             slide["presentation"] = self.presentation_id
-            slide["content"] = (
-                LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
-                .to_content()
-                .model_dump(mode="json")
-            )
+            
+            # Log slide content structure
+            if "content" in slide:
+                print(f"Content keys: {list(slide['content'].keys())}")
+                
+                # Handle missing fields based on slide type
+                if slide["type"] == 2 and "body" in slide["content"]:
+                    print(f"Type 2 slide with {len(slide['content']['body'])} body items")
+                    
+                    # Check if we have alternating heading/description pattern
+                    body_items = slide["content"]["body"]
+                    has_alternating_pattern = True
+                    for j, item in enumerate(body_items):
+                        if isinstance(item, dict):
+                            if j % 2 == 0 and "heading" not in item:
+                                has_alternating_pattern = False
+                                break
+                            elif j % 2 == 1 and "description" not in item:
+                                has_alternating_pattern = False
+                                break
+                    
+                    if has_alternating_pattern and len(body_items) % 2 == 0:
+                        # Combine alternating items into proper heading/description pairs
+                        print("  Detected alternating heading/description pattern. Combining...")
+                        new_body = []
+                        for j in range(0, len(body_items), 2):
+                            combined_item = {}
+                            if j < len(body_items) and isinstance(body_items[j], dict):
+                                combined_item.update(body_items[j])
+                            if j + 1 < len(body_items) and isinstance(body_items[j + 1], dict):
+                                combined_item.update(body_items[j + 1])
+                            new_body.append(combined_item)
+                        slide["content"]["body"] = new_body
+                        print(f"  Combined into {len(new_body)} complete items")
+                    
+                    # Now handle any remaining missing fields
+                    for j, item in enumerate(slide["content"]["body"]):
+                        if isinstance(item, dict):
+                            print(f"  Item {j}: keys = {list(item.keys())}")
+                            if "description" not in item:
+                                print(f"  WARNING: Missing description in item {j}")
+                                # Generate a default description based on the heading
+                                heading = item.get("heading", "")
+                                item["description"] = f"Details about {heading}"
+                                print(f"  Generated default description: {item['description']}")
+                
+                elif slide["type"] == 4 and "body" in slide["content"]:
+                    print(f"Type 4 slide with {len(slide['content']['body'])} body items")
+                    for j, item in enumerate(slide["content"]["body"]):
+                        if isinstance(item, dict):
+                            print(f"  Item {j}: keys = {list(item.keys())}")
+                            if "image_prompt" not in item:
+                                print(f"  WARNING: Missing image_prompt in item {j}")
+                                # Generate a default image prompt based on the heading
+                                heading = item.get("heading", "")
+                                item["image_prompt"] = f"Professional image representing {heading}, no text in image"
+                                print(f"  Generated default image_prompt: {item['image_prompt']}")
+                            if "description" not in item:
+                                print(f"  WARNING: Missing description in item {j}")
+                                heading = item.get("heading", "")
+                                item["description"] = f"Details about {heading}"
+                                print(f"  Generated default description: {item['description']}")
+                
+                elif slide["type"] in [6, 7, 8] and "body" in slide["content"]:
+                    print(f"Type {slide['type']} slide with {len(slide['content']['body'])} body items")
+                    
+                    # Check if we have alternating heading/description pattern
+                    body_items = slide["content"]["body"]
+                    has_alternating_pattern = True
+                    for j, item in enumerate(body_items):
+                        if isinstance(item, dict):
+                            if j % 2 == 0 and "heading" not in item:
+                                has_alternating_pattern = False
+                                break
+                            elif j % 2 == 1 and "description" not in item:
+                                has_alternating_pattern = False
+                                break
+                    
+                    if has_alternating_pattern and len(body_items) % 2 == 0:
+                        # Combine alternating items into proper heading/description pairs
+                        print("  Detected alternating heading/description pattern. Combining...")
+                        new_body = []
+                        for j in range(0, len(body_items), 2):
+                            combined_item = {}
+                            if j < len(body_items) and isinstance(body_items[j], dict):
+                                combined_item.update(body_items[j])
+                            if j + 1 < len(body_items) and isinstance(body_items[j + 1], dict):
+                                combined_item.update(body_items[j + 1])
+                            new_body.append(combined_item)
+                        slide["content"]["body"] = new_body
+                        print(f"  Combined into {len(new_body)} complete items")
+                    
+                    # Now handle any remaining missing fields
+                    for j, item in enumerate(slide["content"]["body"]):
+                        if isinstance(item, dict):
+                            print(f"  Item {j}: keys = {list(item.keys())}")
+                            if "description" not in item:
+                                print(f"  WARNING: Missing description in item {j}")
+                                heading = item.get("heading", "")
+                                item["description"] = f"Details about {heading}"
+                                print(f"  Generated default description: {item['description']}")
+                            
+                            # Type 7 and 8 need icon_query
+                            if slide["type"] in [7, 8] and "icon_query" not in item:
+                                print(f"  WARNING: Missing icon_query in item {j}")
+                                heading = item.get("heading", "")
+                                # Extract first meaningful word for icon
+                                icon_word = heading.split()[0] if heading else "info"
+                                item["icon_query"] = [icon_word, "icon", "symbol"]
+                                print(f"  Generated default icon_query: {item['icon_query']}")
+            
+            try:
+                slide["content"] = (
+                    LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
+                    .to_content()
+                    .model_dump(mode="json")
+                )
+                print(f"Successfully processed slide {i+1}")
+            except Exception as e:
+                print(f"\nERROR processing slide {i+1}:")
+                print(f"  Exception type: {type(e).__name__}")
+                print(f"  Exception message: {str(e)}")
+                print(f"  Slide type: {slide.get('type', 'unknown')}")
+                print(f"  Full slide data:")
+                print(json.dumps(slide, indent=2, ensure_ascii=False))
+                raise
+                
             slide_model = SlideModel(**slide)
             slide_models.append(slide_model)
 
@@ -110,7 +243,13 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
 
         print("-" * 40)
         print("Fetching Slide Assets")
-        async for result in self.fetch_slide_assets(slide_models):
+        # Use image provider from request or construct from image_model
+        image_provider = self.data.image_provider
+        if not image_provider and self.data.image_model:
+            # If image_model is specified but not provider, assume it's a Flux model
+            image_provider = f"flux:{self.data.image_model}"
+        
+        async for result in self.fetch_slide_assets(slide_models, image_provider=image_provider):
             print(result)
 
         slide_sql_models = [
@@ -135,20 +274,91 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
             sql_session.commit()
             for each in slide_sql_models:
                 sql_session.refresh(each)
+            
+            # Verify the presentation was saved
+            print(f"Presentation saved with ID: {self.presentation_id}")
+            print(f"Number of slides saved: {len(slide_sql_models)}")
+            
+            # Double-check by querying it back
+            saved_presentation = sql_session.get(PresentationSqlModel, self.presentation_id)
+            if saved_presentation:
+                print(f"Verified: Presentation found in DB with title: {saved_presentation.title}")
+                # Query slides separately
+                from sqlmodel import select
+                slides_count = len(sql_session.exec(
+                    select(SlideSqlModel).where(SlideSqlModel.presentation == self.presentation_id)
+                ).all())
+                print(f"Verified: {slides_count} slides in DB for this presentation")
+            else:
+                print("ERROR: Presentation not found in database after save!")
 
         if self.data.export_as == "pptx":
             print("-" * 40)
             print("Fetching Slide Metadata for Export")
+            
+            # First, verify the presentation is accessible via API
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"http://localhost/api/slide-metadata",
-                    json={
-                        "url": f"http://localhost/presentation?id={self.presentation_id}",
-                        "theme": self.theme["name"],
-                        "customColors": self.theme["colors"],
-                    },
-                ) as response:
-                    export_request_body = await response.json()
+                api_url = f"http://localhost/api/v1/ppt/presentation?presentation_id={self.presentation_id}"
+                print(f"Checking if presentation is accessible at: {api_url}")
+                async with session.get(api_url) as response:
+                    if response.status == 200:
+                        api_data = await response.json()
+                        print(f"API check successful: Found presentation with {len(api_data.get('slides', []))} slides")
+                        # Check for any data issues
+                        presentation_data = api_data.get('presentation', {})
+                        print(f"Presentation language: {presentation_data.get('language', 'unknown')}")
+                        print(f"Presentation title: {presentation_data.get('title', 'unknown')}")
+                        # Check first slide for potential issues
+                        if api_data.get('slides'):
+                            first_slide = api_data['slides'][0]
+                            print(f"First slide type: {first_slide.get('type')}")
+                            print(f"First slide content keys: {list(first_slide.get('content', {}).keys())}")
+                    else:
+                        print(f"API check failed with status: {response.status}")
+                        print(f"Response: {await response.text()}")
+            
+            # Add initial delay to let frontend load
+            print("Waiting 5 seconds for frontend to initialize...")
+            await asyncio.sleep(5)
+            
+            # Retry logic for slide metadata
+            max_retries = 3
+            retry_delay = 3
+            
+            for attempt in range(max_retries):
+                try:
+                    metadata_url = f"http://localhost/presentation?id={self.presentation_id}"
+                    print(f"Attempt {attempt + 1}: Calling slide-metadata with URL: {metadata_url}")
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            f"http://localhost/api/slide-metadata",
+                            json={
+                                "url": metadata_url,
+                                "theme": self.theme["name"],
+                                "customColors": self.theme["colors"],
+                            },
+                        ) as response:
+                            export_request_body = await response.json()
+                            
+                            # Check if we got an error response
+                            if "error" in export_request_body:
+                                if attempt < max_retries - 1:
+                                    print(f"Slide metadata error: {export_request_body['error']}, retrying in {retry_delay}s...")
+                                    await asyncio.sleep(retry_delay)
+                                    continue
+                                else:
+                                    raise HTTPException(
+                                        status_code=500,
+                                        detail=f"Failed to fetch slide metadata: {export_request_body['error']}"
+                                    )
+                            break
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        print(f"Error fetching slide metadata: {e}, retrying...")
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        raise
 
             print("-" * 40)
             print("Exporting Presentation")

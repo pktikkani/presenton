@@ -125,6 +125,7 @@ async def generate_presentation_stream(
         ],
         response_format=response_format,
         stream=True,
+        temperature=0.3,  # Lower temperature for more consistent output
     )
 
     return response
@@ -151,6 +152,19 @@ async def generate_presentation(
             },
         ],
         response_format=response_format,
+        temperature=0.3,  # Lower temperature for more consistent output
     )
 
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    print(f"LLM Response length: {len(content)}")
+    print(f"First 1000 chars: {content[:1000] if content else 'None'}")
+    
+    # Parse and validate the response
+    try:
+        import json
+        parsed = json.loads(content)
+        print(f"Parsed slides count: {len(parsed.get('slides', []))}")
+    except:
+        print("Failed to parse response as JSON")
+    
+    return content

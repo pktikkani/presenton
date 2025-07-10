@@ -165,6 +165,10 @@ class GeneratePresentationRequest(BaseModel):
     theme: ThemeEnum = Field(default=ThemeEnum.LIGHT)
     documents: Optional[List[UploadFile]] = None
     export_as: Literal["pptx", "pdf"] = Field(default="pptx")
+    llm_provider: Optional[str] = Field(default=None, description="Override LLM provider: openai, google, ollama, custom")
+    llm_model: Optional[str] = Field(default=None, description="Specific LLM model to use")
+    image_provider: Optional[str] = Field(default=None, description="Image provider: openai, google, pexels, flux, flux:model-name")
+    image_model: Optional[str] = Field(default=None, description="Specific image model (for Flux: flux-kontext-max, flux-kontext-pro, flux-pro-1.1-ultra, flux-pro-1.1, flux-pro, flux-dev)")
 
 
 class OllamaModelStatusResponse(BaseModel):

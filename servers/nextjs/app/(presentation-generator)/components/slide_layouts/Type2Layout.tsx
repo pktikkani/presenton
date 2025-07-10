@@ -10,6 +10,7 @@ import { MoreVertical, Plus } from "lucide-react";
 import ElementMenu from "../ElementMenu";
 import { useSelector } from "react-redux";
 import { numberTranslations } from "../../utils/others";
+import { getNumberForLanguage } from "../../utils/language-helper";
 import { RootState } from "@/store/store";
 import { useSlideOperations } from "../../hooks/use-slide-operations";
 import SlideFooter from "./SlideFooter";
@@ -137,7 +138,7 @@ const Type2Layout = ({
                   data-element-type="text"
                   data-element-id={`slide-${slideIndex}-timeline-number-text-${index}`}
                 >
-                  {numberTranslations[language][index || 0]}
+                  {getNumberForLanguage(language, index || 0)}
                 </span>
               </div>
             ))}

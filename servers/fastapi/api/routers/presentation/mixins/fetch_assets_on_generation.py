@@ -12,7 +12,7 @@ from ppt_generator.slide_model_utils import SlideModelUtils
 
 class FetchAssetsOnPresentationGenerationMixin:
 
-    async def fetch_slide_assets(self, slide_models: List[SlideModel]):
+    async def fetch_slide_assets(self, slide_models: List[SlideModel], image_provider: str = None):
         image_prompts = []
         icon_queries = []
 
@@ -30,6 +30,7 @@ class FetchAssetsOnPresentationGenerationMixin:
             generate_image(
                 each,
                 images_directory,
+                image_provider=image_provider,
             )
             for each in image_prompts
         ] + [get_icon(icon_vector_store, each) for each in icon_queries]

@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import ElementMenu from "../ElementMenu";
 import { useSelector } from "react-redux";
 import { numberTranslations } from "../../utils/others";
+import { getNumberForLanguage } from "../../utils/language-helper";
 import { RootState } from "@/store/store";
 import AllChart from "./AllChart";
 import { useSlideOperations } from "../../hooks/use-slide-operations";
@@ -106,7 +107,7 @@ const Type9Layout = ({
                         color: currentColors.iconBg,
                       }}
                     >
-                      {numberTranslations[language][index || 0]}
+                      {getNumberForLanguage(language, index || 0)}
                     </div>
 
                     <div className="lg:space-y-2 ">
