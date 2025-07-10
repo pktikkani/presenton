@@ -21,4 +21,7 @@ RUN npm run build
 
 WORKDIR /app
 
+# Create user_data directory for storing presentations and settings
+RUN mkdir -p /app/user_data && chmod 777 /app/user_data
+
 # The rest remains the same
