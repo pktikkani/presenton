@@ -15,8 +15,8 @@ COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type
 COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type6Layout.tsx /app/servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type6Layout.tsx
 COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type9Layout.tsx /app/servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type9Layout.tsx
 
-# Copy the updated static file handler with PPTX support
-COPY servers/nextjs/app/api/static/\[...filepath\]/route.ts /app/servers/nextjs/app/api/static/\[...filepath\]/route.ts
+# Copy the entire api directory to include static handler updates
+COPY servers/nextjs/app/api/ /app/servers/nextjs/app/api/
 
 # Create user_data directory for storing presentations and settings
 RUN mkdir -p /app/user_data && chmod 777 /app/user_data
