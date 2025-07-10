@@ -385,10 +385,8 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
 
             presentation_and_path = PresentationAndPath(
                 presentation_id=self.presentation_id,
-                path=response_json["path"].replace("app", "static"),
+                path=response_json["path"],
             )
-
-        presentation_and_path.path = presentation_and_path.path.replace("app", "static")
         return PresentationPathAndEditPath(
             **presentation_and_path.model_dump(),
             edit_path=f"/presentation?id={self.presentation_id}",
