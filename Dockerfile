@@ -15,13 +15,13 @@ COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type
 COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type6Layout.tsx /app/servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type6Layout.tsx
 COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type9Layout.tsx /app/servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type9Layout.tsx
 
+# Create user_data directory for storing presentations and settings
+RUN mkdir -p /app/user_data && chmod 777 /app/user_data
+
 # Rebuild Next.js app with the updated files
 WORKDIR /app/servers/nextjs
 RUN npm run build
 
 WORKDIR /app
-
-# Create user_data directory for storing presentations and settings
-RUN mkdir -p /app/user_data && chmod 777 /app/user_data
 
 # The rest remains the same
