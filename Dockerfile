@@ -18,6 +18,9 @@ COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type
 # Create user_data directory for storing presentations and settings
 RUN mkdir -p /app/user_data && chmod 777 /app/user_data
 
+# Set the APP_DATA_DIRECTORY environment variable
+ENV APP_DATA_DIRECTORY=/app/user_data
+
 # Rebuild Next.js app with the updated files
 WORKDIR /app/servers/nextjs
 RUN npm run build

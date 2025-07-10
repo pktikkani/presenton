@@ -43,6 +43,8 @@ function getMimeType(filePath: string): string {
     case '.jpeg': return 'image/jpeg';
     case '.png': return 'image/png';
     case '.pdf': return 'application/pdf';
+    case '.pptx': return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    case '.ppt': return 'application/vnd.ms-powerpoint';
     default: return 'application/octet-stream';
   }
 }
