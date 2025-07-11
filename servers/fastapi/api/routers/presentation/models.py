@@ -151,6 +151,7 @@ class PresentationAndPaths(BaseModel):
 
 class PresentationPathAndEditPath(PresentationAndPath):
     edit_path: str
+    download_url: Optional[str] = None
 
 
 class UpdatePresentationTitlesRequest(BaseModel):

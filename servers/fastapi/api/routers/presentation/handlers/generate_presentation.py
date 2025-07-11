@@ -387,7 +387,17 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
                 presentation_id=self.presentation_id,
                 path=response_json["path"],
             )
+        # Convert file path to download URL
+        download_url = None
+        if presentation_and_path.path:
+            # Extract the path after /app/
+            path_parts = presentation_and_path.path.split('/app/')
+            if len(path_parts) > 1:
+                relative_path = path_parts[1]
+                download_url = f"/api/static/{relative_path}"
+        
         return PresentationPathAndEditPath(
             **presentation_and_path.model_dump(),
             edit_path=f"/presentation?id={self.presentation_id}",
+            download_url=download_url,
         )
