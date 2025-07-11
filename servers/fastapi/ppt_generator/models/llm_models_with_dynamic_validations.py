@@ -1,4 +1,4 @@
-from typing import List, Type, Dict, Any
+from typing import List, Type, Dict, Any, Optional
 from pydantic import Field, create_model, BaseModel
 
 from graph_processor.models import LLMGraphModel
@@ -90,9 +90,16 @@ def get_llm_content_type_mapping_with_validation(mode: str = "normal") -> Dict[i
     
     # For types with items, we need special handling
     class LLMHeadingModelValidation(LLMHeadingModel):
-        title: str = Field(
+        heading: Optional[str] = Field(
+            None,
+            description=f"Item heading in about {limits['item_title']['max'] // 10} words.",
+            min_length=limits["item_title"]["min"] if limits["item_title"]["min"] > 0 else None,
+            max_length=limits["item_title"]["max"],
+        )
+        title: Optional[str] = Field(
+            None,
             description=f"Item title in about {limits['item_title']['max'] // 10} words.",
-            min_length=limits["item_title"]["min"],
+            min_length=limits["item_title"]["min"] if limits["item_title"]["min"] > 0 else None,
             max_length=limits["item_title"]["max"],
         )
         description: str = Field(
@@ -107,9 +114,16 @@ def get_llm_content_type_mapping_with_validation(mode: str = "normal") -> Dict[i
             min_length=limits["image_prompt"]["min"],
             max_length=limits["image_prompt"]["max"],
         )
-        title: str = Field(
+        heading: Optional[str] = Field(
+            None,
+            description=f"Item heading in about {limits['item_title']['max'] // 10} words.",
+            min_length=limits["item_title"]["min"] if limits["item_title"]["min"] > 0 else None,
+            max_length=limits["item_title"]["max"],
+        )
+        title: Optional[str] = Field(
+            None,
             description=f"Item title in about {limits['item_title']['max'] // 10} words.",
-            min_length=limits["item_title"]["min"],
+            min_length=limits["item_title"]["min"] if limits["item_title"]["min"] > 0 else None,
             max_length=limits["item_title"]["max"],
         )
         description: str = Field(
@@ -124,9 +138,16 @@ def get_llm_content_type_mapping_with_validation(mode: str = "normal") -> Dict[i
             min_length=limits["icon_query"]["min"],
             max_length=limits["icon_query"]["max"],
         )
-        title: str = Field(
+        heading: Optional[str] = Field(
+            None,
+            description=f"Item heading in about {limits['item_title']['max'] // 10} words.",
+            min_length=limits["item_title"]["min"] if limits["item_title"]["min"] > 0 else None,
+            max_length=limits["item_title"]["max"],
+        )
+        title: Optional[str] = Field(
+            None,
             description=f"Item title in about {limits['item_title']['max'] // 10} words.",
-            min_length=limits["item_title"]["min"],
+            min_length=limits["item_title"]["min"] if limits["item_title"]["min"] > 0 else None,
             max_length=limits["item_title"]["max"],
         )
         description: str = Field(

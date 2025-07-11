@@ -1,4 +1,4 @@
-from typing import List, Mapping, Union
+from typing import List, Mapping, Union, Optional
 from pydantic import BaseModel
 
 from graph_processor.models import GraphModel, LLMGraphModel
@@ -43,12 +43,15 @@ class LLMTableModel(TableModel):
 
 
 class LLMHeadingModel(BaseModel):
-    heading: str
+    heading: Optional[str] = None
+    title: Optional[str] = None  # Accept both title and heading
     description: str
 
     def to_content(self) -> HeadingModel:
+        # Use heading if available, otherwise fall back to title
+        actual_heading = self.heading or self.title or ""
         return HeadingModel(
-            heading=self.heading,
+            heading=actual_heading,
             description=self.description,
         )
 
@@ -57,8 +60,10 @@ class LLMHeadingModelWithImagePrompt(LLMHeadingModel):
     image_prompt: str
 
     def to_content(self) -> HeadingModel:
+        # Use parent's logic to handle title/heading
+        actual_heading = self.heading or self.title or ""
         return HeadingModel(
-            heading=self.heading,
+            heading=actual_heading,
             description=self.description,
         )
 
@@ -67,8 +72,10 @@ class LLMHeadingModelWithIconQuery(LLMHeadingModel):
     icon_query: str
 
     def to_content(self) -> HeadingModel:
+        # Use parent's logic to handle title/heading
+        actual_heading = self.heading or self.title or ""
         return HeadingModel(
-            heading=self.heading,
+            heading=actual_heading,
             description=self.description,
         )
 
