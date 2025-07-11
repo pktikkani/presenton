@@ -24,7 +24,21 @@ class TempFileService:
         if dir_path is None:
             dir_path = self.base_dir
 
-        full_path = os.path.join(dir_path, file_path)
+        # Sanitize file path to prevent directory traversal
+        # Remove any path separators and parent directory references
+        safe_filename = os.path.basename(file_path)
+        safe_filename = safe_filename.replace("..", "")
+        safe_filename = safe_filename.replace("/", "")
+        safe_filename = safe_filename.replace("\\", "")
+        
+        # Ensure the file will be created within the designated directory
+        full_path = os.path.join(dir_path, safe_filename)
+        
+        # Verify the resolved path is within the base directory
+        real_base = os.path.realpath(dir_path)
+        real_path = os.path.realpath(os.path.dirname(full_path))
+        if not real_path.startswith(real_base):
+            raise ValueError("Path traversal attempt detected")
 
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         return full_path

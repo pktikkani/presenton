@@ -78,13 +78,26 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-origins = ["*"]
+# Configure CORS with specific origins
+# Add your production domains here
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "https://presenton-production-772a.up.railway.app",
+    "https://generous-joy-production.up.railway.app",
+    # Add other trusted domains as needed
+]
+
+# For development, you can read from environment
+if os.getenv("ENVIRONMENT") == "development":
+    allowed_origins.append("http://localhost:*")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
