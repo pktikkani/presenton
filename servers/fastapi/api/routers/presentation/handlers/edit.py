@@ -81,6 +81,7 @@ class PresentationEditHandler:
             slide_to_edit,
             presentation.theme,
             presentation.language,
+            presentation.slide_mode or "normal",
         )
 
         new_slide_model = SlideModel(

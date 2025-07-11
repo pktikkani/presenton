@@ -12,11 +12,16 @@ from ppt_generator.models.llm_models import (
 from ppt_generator.models.llm_models_with_validations import (
     LLM_CONTENT_TYPE_MAPPING_WITH_VALIDATION,
 )
+from ppt_generator.models.llm_models_with_dynamic_validations import (
+    get_llm_content_type_mapping_with_validation,
+)
+from ppt_generator.slide_mode_config import get_slide_mode_prompt
 from ppt_generator.models.other_models import SlideTypeModel
 from ppt_generator.models.slide_model import SlideModel
 
 
-def get_prompt_to_generate_slide_content(title: str, outline: str):
+def get_prompt_to_generate_slide_content(title: str, outline: str, slide_mode: str = "normal"):
+    mode_prompt = get_slide_mode_prompt(slide_mode)
     return [
         {
             "role": "system",
@@ -33,7 +38,10 @@ def get_prompt_to_generate_slide_content(title: str, outline: str):
                 - Slide body should not use words like "This slide", "This presentation".
                 - Rephrase the slide body to make it flow naturally.
                 - Do not use markdown formatting in slide body.
-            """,
+                
+                # Slide Mode Instructions
+                {mode_prompt}
+            """.format(mode_prompt=mode_prompt),
         },
         {
             "role": "user",
@@ -118,9 +126,11 @@ def get_prompt_to_select_slide_type(prompt: str, slide_data: dict, slide_type: i
 
 
 async def get_slide_content_from_type_and_outline(
-    slide_type: int, outline: SlideMarkdownModel
+    slide_type: int, outline: SlideMarkdownModel, slide_mode: str = "normal"
 ) -> LLMContentUnion:
-    response_model = LLM_CONTENT_TYPE_MAPPING_WITH_VALIDATION[slide_type]
+    # Get dynamic validation model based on slide mode
+    content_type_mapping = get_llm_content_type_mapping_with_validation(slide_mode)
+    response_model = content_type_mapping[slide_type]
 
     client = get_llm_client()
     model = get_small_model()
@@ -131,6 +141,7 @@ async def get_slide_content_from_type_and_outline(
         messages=get_prompt_to_generate_slide_content(
             outline.title,
             outline.body,
+            slide_mode,
         ),
         response_format=response_model,
     )
@@ -144,11 +155,14 @@ async def get_edited_slide_content_model(
     slide: SlideModel,
     theme: Optional[dict] = None,
     language: Optional[str] = None,
+    slide_mode: str = "normal",
 ) -> LLMContentUnion:
     client = get_llm_client()
     model = get_large_model()
 
-    content_type_model_type = LLM_CONTENT_TYPE_MAPPING_WITH_VALIDATION[slide_type]
+    # Get dynamic validation model based on slide mode
+    content_type_mapping = get_llm_content_type_mapping_with_validation(slide_mode)
+    content_type_model_type = content_type_mapping[slide_type]
     slide_data = slide.content.to_llm_content().model_dump_json()
     response = await client.beta.chat.completions.parse(
         model=model,

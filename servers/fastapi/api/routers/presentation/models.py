@@ -45,6 +45,7 @@ class GeneratePresentationRequirementsRequest(BaseModel):
     documents: Optional[List[str]] = None
     research_reports: Optional[List[str]] = None
     images: Optional[List[str]] = None
+    slide_mode: Literal["compact", "normal", "detailed"] = Field(default="normal")
 
 
 class GenerateOutlinesRequest(BaseModel):
@@ -163,4 +164,5 @@ class GeneratePresentationRequest(BaseModel):
     theme: ThemeEnum = Field(default=ThemeEnum.LIGHT)
     documents: Optional[List[UploadFile]] = None
     export_as: Literal["pptx", "pdf"] = Field(default="pptx")
+    slide_mode: Literal["compact", "normal", "detailed"] = Field(default="normal")
 

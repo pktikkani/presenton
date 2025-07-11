@@ -27,6 +27,9 @@ from ppt_generator.generator import generate_presentation
 from ppt_generator.models.llm_models import (
     LLM_CONTENT_TYPE_MAPPING,
 )
+from ppt_generator.models.llm_models_with_dynamic_validations import (
+    get_llm_content_type_mapping_with_validation,
+)
 from ppt_generator.models.slide_model import SlideModel
 
 
@@ -75,22 +78,37 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
                 title=presentation_content.title,
                 slides=presentation_content.slides,
                 notes=presentation_content.notes,
-            )
+            ),
+            self.data.slide_mode
         )
 
         print("-" * 40)
         print("Parsing Presentation")
         presentation_json = json.loads(presentation_text)
 
+        # Get dynamic content type mapping based on slide mode
+        content_type_mapping = get_llm_content_type_mapping_with_validation(self.data.slide_mode)
+        
         slide_models: List[SlideModel] = []
         for i, slide in enumerate(presentation_json["slides"]):
             slide["index"] = i
             slide["presentation"] = self.presentation_id
-            slide["content"] = (
-                LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
-                .to_content()
-                .model_dump(mode="json")
-            )
+            
+            # Try dynamic validation first, fall back to standard if it fails
+            try:
+                slide["content"] = (
+                    content_type_mapping[slide["type"]](**slide["content"])
+                    .to_content()
+                    .model_dump(mode="json")
+                )
+            except Exception as e:
+                print(f"Dynamic validation failed for slide {i}, using standard: {e}")
+                slide["content"] = (
+                    LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
+                    .to_content()
+                    .model_dump(mode="json")
+                )
+            
             slide_model = SlideModel(**slide)
             slide_models.append(slide_model)
 
@@ -121,6 +139,7 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
             title=presentation_content.title,
             outlines=[each.model_dump() for each in presentation_content.slides],
             notes=presentation_content.notes,
+            slide_mode=self.data.slide_mode,
         )
 
         with get_sql_session() as sql_session:

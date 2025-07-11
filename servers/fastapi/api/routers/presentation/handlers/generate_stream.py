@@ -28,6 +28,9 @@ from ppt_generator.models.llm_models import (
     LLMPresentationModel,
     LLMSlideModel,
 )
+from ppt_generator.models.llm_models_with_dynamic_validations import (
+    get_llm_content_type_mapping_with_validation,
+)
 from ppt_generator.models.slide_model import SlideModel
 from api.services.instances import TEMP_FILE_SERVICE
 
@@ -101,15 +104,30 @@ class PresentationGenerateStreamHandler(FetchAssetsOnPresentationGenerationMixin
         async for result in self.generate_presentation_openai_google():
             yield result
 
+        # Get dynamic content type mapping based on slide mode
+        slide_mode = self.presentation.slide_mode or "normal"
+        content_type_mapping = get_llm_content_type_mapping_with_validation(slide_mode)
+        
         slide_models: List[SlideModel] = []
         for i, slide in enumerate(self.presentation_json["slides"]):
             slide["index"] = i
             slide["presentation"] = self.presentation.id
-            slide["content"] = (
-                LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
-                .to_content()
-                .model_dump(mode="json")
-            )
+            
+            # Try dynamic validation first, fall back to standard if it fails
+            try:
+                slide["content"] = (
+                    content_type_mapping[slide["type"]](**slide["content"])
+                    .to_content()
+                    .model_dump(mode="json")
+                )
+            except Exception as e:
+                print(f"Dynamic validation failed for slide {i}, using standard: {e}")
+                slide["content"] = (
+                    LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
+                    .to_content()
+                    .model_dump(mode="json")
+                )
+                
             slide_model = SlideModel(**slide)
             slide_models.append(slide_model)
 
@@ -141,7 +159,8 @@ class PresentationGenerateStreamHandler(FetchAssetsOnPresentationGenerationMixin
                 title=self.title,
                 slides=self.outlines,
                 notes=self.presentation.notes,
-            )
+            ),
+            self.presentation.slide_mode or "normal"
         ):
             chunk = event.choices[0].delta.content
 

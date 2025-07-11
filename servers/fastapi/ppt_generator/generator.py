@@ -10,6 +10,10 @@ from ppt_config_generator.models import PresentationMarkdownModel
 from ppt_generator.models.llm_models_with_validations import (
     LLMPresentationModelWithValidation,
 )
+from ppt_generator.models.llm_models_with_dynamic_validations import (
+    get_llm_content_type_mapping_with_validation,
+)
+from ppt_generator.slide_mode_config import get_slide_mode_prompt
 
 
 CREATE_PRESENTATION_PROMPT = """
@@ -79,11 +83,14 @@ Make description short and obey the character limits. Output should be in JSON f
 """
 
 
-def get_system_prompt():
+def get_system_prompt(slide_mode: str = "normal"):
+    mode_prompt = get_slide_mode_prompt(slide_mode)
+    base_prompt = CREATE_PRESENTATION_PROMPT + f"\n\n# Slide Mode Instructions\n{mode_prompt}"
+    
     is_google_selected = get_selected_llm_provider() == SelectedLLMProvider.GOOGLE
-    return (
-        system_prompt_with_schema if is_google_selected else CREATE_PRESENTATION_PROMPT
-    )
+    if is_google_selected:
+        return f"{base_prompt}\n\nFollow this schema while giving out response: {LLMPresentationModelWithValidation.model_json_schema()}.\n\nMake description short and obey the character limits. Output should be in JSON format. Give out only JSON, nothing else."
+    return base_prompt
 
 
 def get_response_format():
@@ -105,6 +112,7 @@ def get_response_format():
 
 async def generate_presentation_stream(
     presentation_outline: PresentationMarkdownModel,
+    slide_mode: str = "normal",
 ) -> AsyncStream[ChatCompletionChunk]:
     client = get_llm_client()
     model = get_large_model()
@@ -116,7 +124,7 @@ async def generate_presentation_stream(
         messages=[
             {
                 "role": "system",
-                "content": get_system_prompt(),
+                "content": get_system_prompt(slide_mode),
             },
             {
                 "role": "user",
@@ -132,6 +140,7 @@ async def generate_presentation_stream(
 
 async def generate_presentation(
     presentation_outline: PresentationMarkdownModel,
+    slide_mode: str = "normal",
 ) -> str:
     client = get_llm_client()
     model = get_large_model()
@@ -143,7 +152,7 @@ async def generate_presentation(
         messages=[
             {
                 "role": "system",
-                "content": get_system_prompt(),
+                "content": get_system_prompt(slide_mode),
             },
             {
                 "role": "user",

@@ -5,7 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LanguageType, PresentationConfig } from "../type";
+import { LanguageType, PresentationConfig, SlideMode } from "../type";
 import { useState } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -125,6 +125,46 @@ const LanguageSelect: React.FC<{
   </Popover>
 );
 
+/**
+ * Renders a select component for slide mode
+ */
+const SlideModeSelect: React.FC<{
+  value: SlideMode | undefined;
+  onValueChange: (value: string) => void;
+}> = ({ value, onValueChange }) => (
+  <Select value={value || "normal"} onValueChange={onValueChange} name="slideMode">
+    <SelectTrigger
+      className="w-[180px] font-instrument_sans font-medium bg-blue-100 border-blue-200 focus-visible:ring-blue-300"
+      data-testid="slide-mode-select"
+    >
+      <SelectValue placeholder="Select Mode" />
+    </SelectTrigger>
+    <SelectContent className="font-instrument_sans">
+      <SelectItem
+        value="compact"
+        className="font-instrument_sans text-sm font-medium"
+        role="option"
+      >
+        Compact (less text)
+      </SelectItem>
+      <SelectItem
+        value="normal"
+        className="font-instrument_sans text-sm font-medium"
+        role="option"
+      >
+        Normal (balanced)
+      </SelectItem>
+      <SelectItem
+        value="detailed"
+        className="font-instrument_sans text-sm font-medium"
+        role="option"
+      >
+        Detailed (more text)
+      </SelectItem>
+    </SelectContent>
+  </Select>
+);
+
 export function ConfigurationSelects({
   config,
   onConfigChange,
@@ -142,6 +182,10 @@ export function ConfigurationSelects({
         onValueChange={(value) => onConfigChange("language", value)}
         open={openLanguage}
         onOpenChange={setOpenLanguage}
+      />
+      <SlideModeSelect
+        value={config.slideMode}
+        onValueChange={(value) => onConfigChange("slideMode", value)}
       />
     </div>
   );

@@ -21,6 +21,7 @@ class GeneratePresentationRequirementsHandler:
         self.n_slides = data.n_slides
         self.documents = data.documents or []
         self.language = data.language
+        self.slide_mode = data.slide_mode
 
         self.session = str(uuid.uuid4())
         self.temp_dir = TEMP_FILE_SERVICE.create_temp_dir(self.session)
@@ -44,6 +45,7 @@ class GeneratePresentationRequirementsHandler:
             n_slides=self.n_slides,
             language=self.language,
             summary=summary,
+            slide_mode=self.slide_mode,
         )
 
         with get_sql_session() as sql_session:

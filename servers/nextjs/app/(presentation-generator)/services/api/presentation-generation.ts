@@ -415,14 +415,14 @@ export class PresentationGenerationApi {
     documents,
     images,
     language,
-
+    slide_mode,
   }: {
     prompt: string;
     n_slides: number | null;
     documents?: string[];
     images?: string[];
     language: string | null;
-
+    slide_mode?: string;
   }) {
     try {
       const response = await fetch(
@@ -436,7 +436,7 @@ export class PresentationGenerationApi {
             language,
             documents,
             images,
-
+            slide_mode,
           }),
           cache: "no-cache",
         }
