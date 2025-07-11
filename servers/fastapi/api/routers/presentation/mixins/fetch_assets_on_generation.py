@@ -6,17 +6,14 @@ from api.utils.utils import get_presentation_images_dir
 from image_processor.icons_finder import get_icon
 from image_processor.icons_vectorstore_utils import get_icons_vectorstore
 from image_processor.images_finder import generate_image
-# Import V2 image generator if available
+# Import V2 image generator
 import os
-if os.environ.get("V2_IMAGE_PROVIDER"):
-    try:
-        from image_processor.images_finder_v2 import generate_image_v2
-        from api.routers.v2.models import ImageProvider, FluxModel
-        use_v2_image_generator = True
-    except ImportError:
-        use_v2_image_generator = False
-else:
-    use_v2_image_generator = False
+try:
+    from image_processor.images_finder_v2 import generate_image_v2
+    from api.routers.v2.models import ImageProvider, FluxModel
+    v2_modules_available = True
+except ImportError:
+    v2_modules_available = False
 from ppt_generator.models.slide_model import SlideModel
 from ppt_generator.slide_model_utils import SlideModelUtils
 
@@ -37,12 +34,16 @@ class FetchAssetsOnPresentationGenerationMixin:
 
         images_directory = get_presentation_images_dir(self.presentation_id)
 
-        # Use V2 image generator if available
-        if use_v2_image_generator and os.environ.get("V2_IMAGE_PROVIDER"):
+        # Use V2 image generator if available and configured
+        use_v2 = v2_modules_available and os.environ.get("V2_IMAGE_PROVIDER")
+        
+        if use_v2:
             image_provider = ImageProvider(os.environ.get("V2_IMAGE_PROVIDER"))
             flux_model = None
             if os.environ.get("V2_FLUX_MODEL"):
                 flux_model = FluxModel(os.environ.get("V2_FLUX_MODEL"))
+            
+            print(f"Using V2 image generator with provider: {image_provider.value}, flux_model: {flux_model.value if flux_model else 'N/A'}")
             
             coroutines = [
                 generate_image_v2(
