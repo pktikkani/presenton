@@ -30,4 +30,8 @@ RUN npm run build
 
 WORKDIR /app
 
-# The rest remains the same
+# Ensure the start script is executable
+RUN chmod +x /app/docker-start.sh
+
+# Start the application
+CMD ["/bin/bash", "/app/docker-start.sh"]
