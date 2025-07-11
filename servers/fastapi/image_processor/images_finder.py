@@ -98,7 +98,8 @@ async def generate_image_flux(
                 headers={
                     'accept': 'application/json',
                     'x-key': api_key,
-                }
+                },
+                params={'id': request_id}
             ) as poll_response:
                 if poll_response.status != 200:
                     continue
@@ -106,7 +107,10 @@ async def generate_image_flux(
                 poll_data = await poll_response.json()
                 
                 if poll_data.get("status") == "Ready":
-                    image_url = poll_data.get("output", {}).get("sample")
+                    # According to FLUX docs, the image URL is at result.sample
+                    result = poll_data.get("result", {})
+                    image_url = result.get("sample")
+                    
                     if image_url:
                         # Download the image
                         async with session.get(image_url) as image_response:
@@ -117,7 +121,10 @@ async def generate_image_flux(
                                     f.write(image_bytes)
                                 print(f"Image saved to: {image_path}")
                                 return image_path
+                            else:
+                                raise Exception(f"Failed to download image from FLUX: HTTP {image_response.status}")
                     else:
+                        print(f"FLUX response structure: {poll_data}")
                         raise Exception("No image URL in FLUX response")
                 
                 elif poll_data.get("status") == "Error":
