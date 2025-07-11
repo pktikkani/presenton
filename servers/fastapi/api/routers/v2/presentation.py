@@ -50,7 +50,7 @@ async def generate_presentation_v2(
     try:
         # Validate inputs
         slide_mode_enum = SlideMode(slide_mode)
-        theme_enum = ThemeEnum(theme.upper() if theme else "LIGHT")
+        theme_enum = ThemeEnum(theme if theme else "light")
         
         # Validate model if specified
         if model:
