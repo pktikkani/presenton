@@ -35,13 +35,6 @@ from api.routers.presentation.handlers.generate_outlines import (
 )
 from api.routers.presentation.handlers.get_presentation import GetPresentationHandler
 from api.routers.presentation.handlers.get_presentations import GetPresentationsHandler
-from api.routers.presentation.handlers.list_ollama_pulled_models import (
-    ListPulledOllamaModelsHandler,
-)
-from api.routers.presentation.handlers.list_supported_ollama_models import (
-    ListSupportedOllamaModelsHandler,
-)
-from api.routers.presentation.handlers.pull_ollama_model import PullOllamaModelHandler
 from api.routers.presentation.handlers.search_icon import SearchIconHandler
 from api.routers.presentation.handlers.search_image import SearchImageHandler
 from api.routers.presentation.handlers.update_parsed_document import (
@@ -67,8 +60,6 @@ from api.routers.presentation.models import (
     GeneratePresentationRequest,
     GeneratePresentationRequirementsRequest,
     GenerateResearchReportRequest,
-    OllamaModelStatusResponse,
-    OllamaSupportedModelsResponse,
     PresentationAndPath,
     PresentationAndPaths,
     PresentationAndSlides,
@@ -82,7 +73,7 @@ from api.routers.presentation.models import (
     PresentationUpdateRequest,
 )
 from api.sql_models import PresentationSqlModel
-from api.utils.model_utils import get_llm_client, list_available_custom_models
+from api.utils.model_utils import get_llm_client
 from api.utils.utils import handle_errors
 from image_processor.images_finder import (
     generate_image_google,
@@ -358,44 +349,3 @@ async def generate_presentation(data: Annotated[GeneratePresentationRequest, For
     )
 
 
-# Ollama Support
-@presentation_router.get(
-    "/ollama/list-supported-models", response_model=OllamaSupportedModelsResponse
-)
-async def list_supported_ollama_models():
-    request_utils = RequestUtils(f"{route_prefix}/ollama/list-supported-models")
-    logging_service, log_metadata = await request_utils.initialize_logger()
-    return await handle_errors(
-        ListSupportedOllamaModelsHandler().get, logging_service, log_metadata
-    )
-
-
-@presentation_router.get(
-    "/ollama/list-pulled-models", response_model=List[OllamaModelStatusResponse]
-)
-async def list_pulled_ollama_models():
-    request_utils = RequestUtils(f"{route_prefix}/ollama/list-pulled-models")
-    logging_service, log_metadata = await request_utils.initialize_logger()
-    return await handle_errors(
-        ListPulledOllamaModelsHandler().get, logging_service, log_metadata
-    )
-
-
-@presentation_router.get("/ollama/pull-model", response_model=OllamaModelStatusResponse)
-async def pull_ollama_model(name: str, background_tasks: BackgroundTasks):
-    request_utils = RequestUtils(f"{route_prefix}/ollama/pull-model")
-    logging_service, log_metadata = await request_utils.initialize_logger()
-    return await handle_errors(
-        PullOllamaModelHandler(name).get,
-        logging_service,
-        log_metadata,
-        background_tasks=background_tasks,
-    )
-
-
-@presentation_router.post("/models/list/custom", response_model=List[str])
-async def list_custom_models(
-    url: Annotated[Optional[str], Body()] = None,
-    api_key: Annotated[Optional[str], Body()] = None,
-):
-    return await list_available_custom_models(url, api_key)

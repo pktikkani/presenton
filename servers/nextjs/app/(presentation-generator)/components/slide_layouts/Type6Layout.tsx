@@ -4,7 +4,6 @@ import { Plus } from "lucide-react";
 import ElementMenu from "../ElementMenu";
 import { useDispatch, useSelector } from "react-redux";
 import { numberTranslations } from "../../utils/others";
-import { getNumberForLanguage } from "../../utils/language-helper";
 import { RootState } from "@/store/store";
 import { useSlideOperations } from "../../hooks/use-slide-operations";
 import SlideFooter from "./SlideFooter";
@@ -108,7 +107,7 @@ const Type6Layout = ({
                       color: currentColors.iconBg,
                     }}
                   >
-                    {getNumberForLanguage(language, index || 0)}
+                    {numberTranslations[language][index || 0]}
                   </div>
                   <div className="space-y-1">
                     <EditableText

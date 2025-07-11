@@ -2,59 +2,40 @@ import asyncio
 import os
 import uuid
 import aiohttp
-from google import genai
-from google.genai.types import GenerateContentConfig
+import time
+from typing import Optional, Literal
+from enum import Enum
 
 from ppt_generator.models.query_and_prompt_models import (
     ImagePromptWithThemeAndAspectRatio,
 )
 from api.utils.utils import download_file, get_resource
-from api.utils.model_utils import (
-    get_llm_client,
-    is_custom_llm_selected,
-    is_ollama_selected,
-)
+
+
+class FluxModel(Enum):
+    KONTEXT_MAX = ("flux-kontext-max", 0.08)
+    KONTEXT_PRO = ("flux-kontext-pro", 0.04)
+    PRO_1_1_ULTRA = ("flux-pro-1.1-ultra", 0.06)
+    PRO_1_1 = ("flux-pro-1.1", 0.04)
+    PRO = ("flux-pro", 0.05)
+    DEV = ("flux-dev", 0.025)
+    
+    def __init__(self, endpoint: str, price: float):
+        self.endpoint = endpoint
+        self.price = price
 
 
 async def generate_image(
     input: ImagePromptWithThemeAndAspectRatio,
     output_directory: str,
-    image_provider: str = None,
 ) -> str:
-    is_ollama = is_ollama_selected()
-    is_custom_llm = is_custom_llm_selected()
-
-    image_prompt = (
-        input.image_prompt
-        if is_ollama or is_custom_llm
-        else f"{input.image_prompt}, {input.theme_prompt}"
-    )
+    # Combine image prompt with theme prompt for better results
+    image_prompt = f"{input.image_prompt}, {input.theme_prompt}"
     print(f"Request - Generating Image for {image_prompt}")
 
     try:
-        # Use image_provider if specified, otherwise use default logic
-        if image_provider:
-            if image_provider.startswith("flux"):
-                # Handle flux models - format: "flux:model-name" or just "flux" for default
-                flux_model = "flux-kontext-pro"
-                if ":" in image_provider:
-                    flux_model = image_provider.split(":", 1)[1]
-                aspect_ratio_str = input.aspect_ratio.value if input.aspect_ratio else "1:1"
-                image_gen_func = lambda p, d: generate_image_flux(p, d, aspect_ratio_str, flux_model)
-            elif image_provider == "openai":
-                image_gen_func = generate_image_openai
-            elif image_provider == "google":
-                image_gen_func = generate_image_google
-            elif image_provider == "pexels":
-                image_gen_func = get_image_from_pexels
-            else:
-                raise Exception(f"Unknown image provider: {image_provider}")
-        else:
-            # Default to Flux for your use case
-            aspect_ratio_str = input.aspect_ratio.value if input.aspect_ratio else "1:1"
-            image_gen_func = lambda p, d: generate_image_flux(p, d, aspect_ratio_str, "flux-kontext-pro")
-        
-        image_path = await image_gen_func(image_prompt, output_directory)
+        # Always use FLUX for image generation
+        image_path = await generate_image_flux(image_prompt, output_directory)
         if image_path and os.path.exists(image_path):
             return image_path
         raise Exception(f"Image not found at {image_path}")
@@ -64,142 +45,83 @@ async def generate_image(
         return get_resource("assets/images/placeholder.jpg")
 
 
-async def generate_image_openai(prompt: str, output_directory: str) -> str:
-    client = get_llm_client()
-    result = await asyncio.to_thread(
-        client.images.generate,
-        model="dall-e-3",
-        prompt=prompt,
-        n=1,
-        quality="standard",
-        size="1024x1024",
-    )
-    image_url = result.data[0].url
+async def generate_image_flux(
+    prompt: str, 
+    output_directory: str,
+    model: FluxModel = None
+) -> str:
+    """Generate image using FLUX API"""
+    # Use the model specified in environment or default to DEV
+    if model is None:
+        model_name = os.getenv("FLUX_MODEL", "DEV")
+        model = FluxModel[model_name] if hasattr(FluxModel, model_name) else FluxModel.DEV
+    
+    api_key = os.getenv("BFL_API_KEY")
+    if not api_key:
+        raise Exception("BFL_API_KEY environment variable is not set")
+    
+    print(f"Using FLUX model: {model.name} (${model.price}/image)")
+    
+    # Make the initial request to FLUX API
     async with aiohttp.ClientSession() as session:
-        async with session.get(image_url) as response:
-            image_bytes = await response.read()
-            image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
-            with open(image_path, "wb") as f:
-                f.write(image_bytes)
-            return image_path
-
-
-async def generate_image_google(prompt: str, output_directory: str) -> str:
-    client = genai.Client()
-    response = await asyncio.to_thread(
-        client.models.generate_content,
-        model="gemini-2.0-flash-preview-image-generation",
-        contents=[prompt],
-        config=GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
-    )
-
-    for part in response.candidates[0].content.parts:
-        if part.text is not None:
-            print(part.text)
-        elif part.inline_data is not None:
-            image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
-            with open(image_path, "wb") as f:
-                f.write(part.inline_data.data)
-
-    return image_path
-
-
-async def get_image_from_pexels(prompt: str, output_directory: str) -> str:
-    async with aiohttp.ClientSession() as session:
-        response = await session.get(
-            f"https://api.pexels.com/v1/search?query={prompt}&per_page=1",
-            headers={"Authorization": f'{os.getenv("PEXELS_API_KEY")}'},
-        )
-        data = await response.json()
-        image_url = data["photos"][0]["src"]["large"]
-        image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
-        await download_file(image_url, image_path)
-        return image_path
-
-
-async def generate_image_flux(prompt: str, output_directory: str, aspect_ratio: str = "1:1", model: str = "flux-kontext-pro") -> str:
-    """Generate images using Black Forest Labs Flux API
-    
-    Available models:
-    - flux-kontext-max: $0.08/image - Maximum performance, improved prompt adherence and typography
-    - flux-kontext-pro: $0.04/image - Unified model for editing and generation
-    - flux-pro-1.1-ultra: $0.06/image - Best for photo-realistic images at 2k resolution
-    - flux-pro-1.1: $0.04/image - Best and most efficient for large-scale generation
-    - flux-pro: $0.05/image - Original pro model
-    - flux-dev: $0.025/image - Distilled model
-    """
-    bfl_api_key = os.getenv("BFL_API_KEY")
-    if not bfl_api_key:
-        raise Exception("BFL_API_KEY not found in environment variables")
-    
-    # Map model names to endpoints
-    model_endpoints = {
-        "flux-kontext-max": "/v1/flux-kontext-max",
-        "flux-kontext-pro": "/v1/flux-kontext-pro",
-        "flux-pro-1.1-ultra": "/v1/flux-pro-1.1-ultra",
-        "flux-pro-1.1": "/v1/flux-pro-1.1",
-        "flux-pro": "/v1/flux-pro",
-        "flux-dev": "/v1/flux-dev"
-    }
-    
-    endpoint = model_endpoints.get(model, "/v1/flux-kontext-pro")
-    
-    async with aiohttp.ClientSession() as session:
-        # Prepare request payload
-        payload = {
-            'prompt': prompt,
-            'aspect_ratio': aspect_ratio
-        }
-        
-        # Add raw option for ultra model
-        if model == "flux-pro-1.1-ultra":
-            payload['output_format'] = 'jpeg'  # Can be 'jpeg' or 'png'
-            # payload['raw'] = True  # Uncomment for extra realism
-        
-        # Start generation request
-        response = await session.post(
-            f'https://api.bfl.ai{endpoint}',
+        async with session.post(
+            f'https://api.bfl.ai/v1/{model.endpoint}',
             headers={
                 'accept': 'application/json',
-                'x-key': bfl_api_key,
+                'x-key': api_key,
                 'Content-Type': 'application/json',
             },
-            json=payload
-        )
-        
-        if response.status != 200:
-            raise Exception(f"Failed to generate image: {await response.text()}")
-        
-        result = await response.json()
-        request_id = result.get("id")
-        polling_url = result.get("polling_url")
-        
-        # Poll for completion
-        max_attempts = 60  # 5 minutes max wait
-        for _ in range(max_attempts):
-            await asyncio.sleep(5)  # Wait 5 seconds between polls
+            json={
+                'prompt': prompt,
+                # Add raw mode for ultra model if needed
+                'raw': model == FluxModel.PRO_1_1_ULTRA and os.getenv("FLUX_RAW_MODE", "false").lower() == "true"
+            }
+        ) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                raise Exception(f"FLUX API error: {response.status} - {error_text}")
             
-            poll_response = await session.get(
+            data = await response.json()
+            request_id = data.get("id")
+            polling_url = data.get("polling_url")
+            
+            if not polling_url:
+                raise Exception("No polling URL received from FLUX API")
+        
+        # Poll for the result
+        max_attempts = 60  # 60 attempts with 2 second delays = 2 minutes max
+        for attempt in range(max_attempts):
+            await asyncio.sleep(2)  # Wait 2 seconds between polls
+            
+            async with session.get(
                 polling_url,
                 headers={
                     'accept': 'application/json',
-                    'x-key': bfl_api_key,
+                    'x-key': api_key,
                 }
-            )
-            
-            if poll_response.status == 200:
+            ) as poll_response:
+                if poll_response.status != 200:
+                    continue
+                    
                 poll_data = await poll_response.json()
-                status = poll_data.get("status")
                 
-                if status == "Ready":
-                    image_url = poll_data.get("result", {}).get("sample")
+                if poll_data.get("status") == "Ready":
+                    image_url = poll_data.get("output", {}).get("sample")
                     if image_url:
-                        image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
-                        await download_file(image_url, image_path)
-                        return image_path
+                        # Download the image
+                        async with session.get(image_url) as image_response:
+                            if image_response.status == 200:
+                                image_bytes = await image_response.read()
+                                image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
+                                with open(image_path, "wb") as f:
+                                    f.write(image_bytes)
+                                print(f"Image saved to: {image_path}")
+                                return image_path
                     else:
-                        raise Exception("No image URL in response")
-                elif status == "Failed":
-                    raise Exception(f"Image generation failed: {poll_data.get('error', 'Unknown error')}")
+                        raise Exception("No image URL in FLUX response")
+                
+                elif poll_data.get("status") == "Error":
+                    error_msg = poll_data.get("error", "Unknown error")
+                    raise Exception(f"FLUX generation error: {error_msg}")
         
-        raise Exception("Image generation timed out")
+        raise Exception("FLUX image generation timed out after 2 minutes")

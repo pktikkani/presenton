@@ -1,40 +1,54 @@
-# Use Python base image
 FROM python:3.11-slim-bookworm
 
-# Install system dependencies
+# Install Node.js and npm
 RUN apt-get update && apt-get install -y \
+    nodejs \  
+    npm \
+    nginx \
     curl \
-    redis-server \
-    && rm -rf /var/lib/apt/lists/*
+    redis-server
 
-# Set working directory
-WORKDIR /app
-
-# Copy FastAPI server files
-COPY servers/fastapi/ /app/servers/fastapi/
-
-# Create user_data directory for storing presentations
-RUN mkdir -p /app/user_data && chmod 777 /app/user_data
+# Create a working directory
+WORKDIR /app  
 
 # Set environment variables
 ENV APP_DATA_DIRECTORY=/app/user_data
-ENV PYTHONPATH=/app/servers/fastapi
 ENV TEMP_DIRECTORY=/tmp/presenton
 
-# Install Python dependencies
-WORKDIR /app/servers/fastapi
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port 8000 for FastAPI
-EXPOSE 8000
+# Install dependencies for FastAPI
+COPY servers/fastapi/requirements.txt ./
+RUN pip install -r requirements.txt
 
-# Create startup script
-RUN echo '#!/bin/bash\n\
-echo "Starting API-only server..."\n\
-service redis-server start\n\
-cd /app/servers/fastapi\n\
-python server.py --port 8000' > /app/start-api.sh && \
-    chmod +x /app/start-api.sh
+# Install dependencies for Next.js
+WORKDIR /app/servers/nextjs
+COPY servers/nextjs/package.json servers/nextjs/package-lock.json ./
+RUN npm install
 
-# Start the API server
-CMD ["/bin/bash", "/app/start-api.sh"]
+# Install chrome for puppeteer
+RUN npx puppeteer browsers install chrome --install-deps
+
+# Copy Next.js app
+COPY servers/nextjs/ /app/servers/nextjs/
+
+# Build the Next.js app
+WORKDIR /app/servers/nextjs
+RUN npm run build
+
+WORKDIR /app
+
+# Copy FastAPI and start script
+COPY servers/fastapi/ ./servers/fastapi/
+COPY start.js LICENSE NOTICE ./
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy start script
+COPY docker-start.sh /app/docker-start.sh
+
+# Expose the port
+EXPOSE 80
+
+# Start the servers
+CMD ["/bin/bash", "/app/docker-start.sh"]

@@ -4,7 +4,6 @@ from typing import List, Literal, Optional
 from fastapi import UploadFile
 from pydantic import BaseModel, Field
 
-from api.models import OllamaModelMetadata
 from ppt_config_generator.models import SlideMarkdownModel
 from ppt_generator.models.pptx_models import PptxPresentationModel
 from ppt_generator.models.query_and_prompt_models import (
@@ -13,7 +12,6 @@ from ppt_generator.models.query_and_prompt_models import (
 )
 from ppt_generator.models.slide_model import SlideModel
 from api.sql_models import PresentationSqlModel, SlideSqlModel
-from ollama._types import ModelDetails
 
 
 class ThemeEnum(Enum):
@@ -151,7 +149,6 @@ class PresentationAndPaths(BaseModel):
 
 class PresentationPathAndEditPath(PresentationAndPath):
     edit_path: str
-    download_url: Optional[str] = None
 
 
 class UpdatePresentationTitlesRequest(BaseModel):
@@ -166,19 +163,4 @@ class GeneratePresentationRequest(BaseModel):
     theme: ThemeEnum = Field(default=ThemeEnum.LIGHT)
     documents: Optional[List[UploadFile]] = None
     export_as: Literal["pptx", "pdf"] = Field(default="pptx")
-    llm_provider: Optional[str] = Field(default=None, description="Override LLM provider: openai, google, ollama, custom")
-    llm_model: Optional[str] = Field(default=None, description="Specific LLM model to use")
-    image_provider: Optional[str] = Field(default=None, description="Image provider: openai, google, pexels, flux, flux:model-name")
-    image_model: Optional[str] = Field(default=None, description="Specific image model (for Flux: flux-kontext-max, flux-kontext-pro, flux-pro-1.1-ultra, flux-pro-1.1, flux-pro, flux-dev)")
 
-
-class OllamaModelStatusResponse(BaseModel):
-    name: str
-    size: Optional[int] = None
-    downloaded: Optional[int] = None
-    status: str
-    done: bool
-
-
-class OllamaSupportedModelsResponse(BaseModel):
-    models: List[OllamaModelMetadata]

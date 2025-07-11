@@ -44,12 +44,6 @@ def get_user_config():
         LLM=existing_config.LLM or os.getenv("LLM"),
         OPENAI_API_KEY=existing_config.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY"),
         GOOGLE_API_KEY=existing_config.GOOGLE_API_KEY or os.getenv("GOOGLE_API_KEY"),
-        OLLAMA_URL=existing_config.OLLAMA_URL or os.getenv("OLLAMA_URL"),
-        OLLAMA_MODEL=existing_config.OLLAMA_MODEL or os.getenv("OLLAMA_MODEL"),
-        CUSTOM_LLM_URL=existing_config.CUSTOM_LLM_URL or os.getenv("CUSTOM_LLM_URL"),
-        CUSTOM_LLM_API_KEY=existing_config.CUSTOM_LLM_API_KEY
-        or os.getenv("CUSTOM_LLM_API_KEY"),
-        CUSTOM_MODEL=existing_config.CUSTOM_MODEL or os.getenv("CUSTOM_MODEL"),
         PEXELS_API_KEY=existing_config.PEXELS_API_KEY or os.getenv("PEXELS_API_KEY"),
     )
 
@@ -62,16 +56,6 @@ def update_env_with_user_config():
         os.environ["OPENAI_API_KEY"] = user_config.OPENAI_API_KEY
     if user_config.GOOGLE_API_KEY:
         os.environ["GOOGLE_API_KEY"] = user_config.GOOGLE_API_KEY
-    if user_config.OLLAMA_URL:
-        os.environ["OLLAMA_URL"] = user_config.OLLAMA_URL
-    if user_config.OLLAMA_MODEL:
-        os.environ["OLLAMA_MODEL"] = user_config.OLLAMA_MODEL
-    if user_config.CUSTOM_LLM_URL:
-        os.environ["CUSTOM_LLM_URL"] = user_config.CUSTOM_LLM_URL
-    if user_config.CUSTOM_LLM_API_KEY:
-        os.environ["CUSTOM_LLM_API_KEY"] = user_config.CUSTOM_LLM_API_KEY
-    if user_config.CUSTOM_MODEL:
-        os.environ["CUSTOM_MODEL"] = user_config.CUSTOM_MODEL
     if user_config.PEXELS_API_KEY:
         os.environ["PEXELS_API_KEY"] = user_config.PEXELS_API_KEY
 
