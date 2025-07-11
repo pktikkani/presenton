@@ -1,7 +1,7 @@
 import json
 import os
 from typing import List
-import uuid, aiohttp, asyncio
+import uuid, asyncio
 from fastapi import HTTPException
 from api.models import LogMetadata
 from api.routers.presentation.handlers.export_as_pptx import ExportAsPptxHandler
@@ -234,12 +234,9 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
             slide_models.append(slide_model)
 
         print("-" * 40)
-        print("Fetching Theme Colors")
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"http://localhost/api/get-theme-from-name?theme={self.data.theme.value}",
-            ) as response:
-                self.theme = await response.json()
+        print("Loading Theme Colors")
+        from api.utils.theme_data import get_theme_from_name
+        self.theme = get_theme_from_name(self.data.theme.value)
 
         print("-" * 40)
         print("Fetching Slide Assets")
@@ -294,75 +291,38 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
 
         if self.data.export_as == "pptx":
             print("-" * 40)
-            print("Fetching Slide Metadata for Export")
+            print("Preparing PPTX Export")
             
-            # First, verify the presentation is accessible via API
-            async with aiohttp.ClientSession() as session:
-                api_url = f"http://localhost/api/v1/ppt/presentation?presentation_id={self.presentation_id}"
-                print(f"Checking if presentation is accessible at: {api_url}")
-                async with session.get(api_url) as response:
-                    if response.status == 200:
-                        api_data = await response.json()
-                        print(f"API check successful: Found presentation with {len(api_data.get('slides', []))} slides")
-                        # Check for any data issues
-                        presentation_data = api_data.get('presentation', {})
-                        print(f"Presentation language: {presentation_data.get('language', 'unknown')}")
-                        print(f"Presentation title: {presentation_data.get('title', 'unknown')}")
-                        # Check first slide for potential issues
-                        if api_data.get('slides'):
-                            first_slide = api_data['slides'][0]
-                            print(f"First slide type: {first_slide.get('type')}")
-                            print(f"First slide content keys: {list(first_slide.get('content', {}).keys())}")
-                    else:
-                        print(f"API check failed with status: {response.status}")
-                        print(f"Response: {await response.text()}")
+            # For API-only mode, we create the export request directly
+            # without fetching slide metadata from the frontend
+            from ppt_generator.models.pptx_models import PptxPresentationModel, PptxSlideModel
             
-            # Add initial delay to let frontend load
-            print("Waiting 5 seconds for frontend to initialize...")
-            await asyncio.sleep(5)
+            # Convert slide models to PPTX format
+            pptx_slides = []
+            for slide in slide_models:
+                pptx_slide = PptxSlideModel(
+                    id=slide.id,
+                    type=slide.type,
+                    content=slide.content,
+                    index=slide.index
+                )
+                pptx_slides.append(pptx_slide)
             
-            # Retry logic for slide metadata
-            max_retries = 3
-            retry_delay = 3
+            # Create PPTX presentation model
+            pptx_model = PptxPresentationModel(
+                id=self.presentation_id,
+                title=presentation_content.title,
+                slides=pptx_slides,
+                theme=self.theme
+            )
             
-            for attempt in range(max_retries):
-                try:
-                    metadata_url = f"http://localhost/presentation?id={self.presentation_id}"
-                    print(f"Attempt {attempt + 1}: Calling slide-metadata with URL: {metadata_url}")
-                    
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            f"http://localhost/api/slide-metadata",
-                            json={
-                                "url": metadata_url,
-                                "theme": self.theme["name"],
-                                "customColors": self.theme["colors"],
-                            },
-                        ) as response:
-                            export_request_body = await response.json()
-                            
-                            # Check if we got an error response
-                            if "error" in export_request_body:
-                                if attempt < max_retries - 1:
-                                    print(f"Slide metadata error: {export_request_body['error']}, retrying in {retry_delay}s...")
-                                    await asyncio.sleep(retry_delay)
-                                    continue
-                                else:
-                                    raise HTTPException(
-                                        status_code=500,
-                                        detail=f"Failed to fetch slide metadata: {export_request_body['error']}"
-                                    )
-                            break
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        print(f"Error fetching slide metadata: {e}, retrying...")
-                        await asyncio.sleep(retry_delay)
-                    else:
-                        raise
-
+            export_request_body = {
+                "presentation_id": self.presentation_id,
+                "pptx_model": pptx_model.model_dump()
+            }
+            
             print("-" * 40)
             print("Exporting Presentation")
-            export_request_body["presentation_id"] = self.presentation_id
             export_request = ExportAsRequest(**export_request_body)
 
             presentation_and_path = await ExportAsPptxHandler(export_request).post(
@@ -370,22 +330,10 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
             )
 
         else:
-            print("-" * 40)
-            print("Exporting Presentation as PDF")
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"http://localhost/api/export-as-pdf",
-                    json={
-                        "url": f"http://localhost/pdf-maker?id={self.presentation_id}",
-                        "title": presentation_content.title,
-                    },
-                ) as response:
-                    response_json = await response.json()
-
-            presentation_and_path = PresentationAndPath(
-                presentation_id=self.presentation_id,
-                path=response_json["path"],
+            # PDF export not supported in API-only mode
+            raise HTTPException(
+                status_code=400,
+                detail="PDF export is not supported in API-only mode. Please use 'pptx' format instead."
             )
         # Convert file path to download URL
         download_url = None
