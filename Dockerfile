@@ -1,37 +1,39 @@
-# Use the pre-built image as base
-FROM ghcr.io/presenton/presenton:latest
+# Use Python base image
+FROM python:3.11-slim-bookworm
 
-# Copy our modified files
-COPY servers/fastapi/image_processor/images_finder.py /app/servers/fastapi/image_processor/images_finder.py
-COPY servers/fastapi/api/routers/presentation/handlers/generate_stream.py /app/servers/fastapi/api/routers/presentation/handlers/generate_stream.py
-COPY servers/fastapi/api/routers/presentation/handlers/generate_presentation.py /app/servers/fastapi/api/routers/presentation/handlers/generate_presentation.py
-COPY servers/fastapi/api/routers/presentation/models.py /app/servers/fastapi/api/routers/presentation/models.py
-COPY servers/fastapi/api/routers/presentation/mixins/fetch_assets_on_generation.py /app/servers/fastapi/api/routers/presentation/mixins/fetch_assets_on_generation.py
-COPY servers/fastapi/api/utils/model_utils.py /app/servers/fastapi/api/utils/model_utils.py
-COPY servers/fastapi/ppt_generator/generator.py /app/servers/fastapi/ppt_generator/generator.py
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    redis-server \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY servers/nextjs/app/\(presentation-generator\)/utils/language-helper.ts /app/servers/nextjs/app/\(presentation-generator\)/utils/language-helper.ts
-COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type2Layout.tsx /app/servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type2Layout.tsx
-COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type6Layout.tsx /app/servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type6Layout.tsx
-COPY servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type9Layout.tsx /app/servers/nextjs/app/\(presentation-generator\)/components/slide_layouts/Type9Layout.tsx
-
-# Copy the entire api directory to include static handler updates
-COPY servers/nextjs/app/api/ /app/servers/nextjs/app/api/
-
-# Create user_data directory for storing presentations and settings
-RUN mkdir -p /app/user_data && chmod 777 /app/user_data
-
-# Set the APP_DATA_DIRECTORY environment variable
-ENV APP_DATA_DIRECTORY=/app/user_data
-
-# Rebuild Next.js app with the updated files
-WORKDIR /app/servers/nextjs
-RUN npm run build
-
+# Set working directory
 WORKDIR /app
 
-# Ensure the start script is executable
-RUN chmod +x /app/docker-start.sh
+# Copy FastAPI server files
+COPY servers/fastapi/ /app/servers/fastapi/
 
-# Start the application
-CMD ["/bin/bash", "/app/docker-start.sh"]
+# Create user_data directory for storing presentations
+RUN mkdir -p /app/user_data && chmod 777 /app/user_data
+
+# Set environment variables
+ENV APP_DATA_DIRECTORY=/app/user_data
+ENV PYTHONPATH=/app/servers/fastapi
+
+# Install Python dependencies
+WORKDIR /app/servers/fastapi
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose port 8000 for FastAPI
+EXPOSE 8000
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+echo "Starting API-only server..."\n\
+service redis-server start\n\
+cd /app/servers/fastapi\n\
+python server.py --port 8000 --host 0.0.0.0' > /app/start-api.sh && \
+    chmod +x /app/start-api.sh
+
+# Start the API server
+CMD ["/bin/bash", "/app/start-api.sh"]

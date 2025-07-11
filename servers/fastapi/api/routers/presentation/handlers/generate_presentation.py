@@ -394,7 +394,8 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
             path_parts = presentation_and_path.path.split('/app/')
             if len(path_parts) > 1:
                 relative_path = path_parts[1]
-                download_url = f"/api/static/{relative_path}"
+                # For API-only mode, use the FastAPI static endpoint
+                download_url = f"/api/v1/static/{relative_path}"
         
         return PresentationPathAndEditPath(
             **presentation_and_path.model_dump(),

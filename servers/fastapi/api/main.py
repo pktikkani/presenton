@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from api.models import SelectedLLMProvider
 from api.routers.presentation.router import presentation_router
+from api.routers.static import static_router
 from api.services.database import sql_engine
 from api.utils.supported_ollama_models import SUPPORTED_OLLAMA_MODELS
 from api.utils.utils import update_env_with_user_config
@@ -96,3 +97,4 @@ async def update_env_middleware(request: Request, call_next):
 
 
 app.include_router(presentation_router)
+app.include_router(static_router, prefix="/api/v1")
