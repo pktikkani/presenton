@@ -62,31 +62,52 @@ async def generate_image_flux(
     
     print(f"Using FLUX model: {model.name} (${model.price}/image)")
     
-    # Make the initial request to FLUX API
+    # Make the initial request to FLUX API with retry logic
     async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f'https://api.bfl.ai/v1/{model.endpoint}',
-            headers={
-                'accept': 'application/json',
-                'x-key': api_key,
-                'Content-Type': 'application/json',
-            },
-            json={
-                'prompt': prompt,
-                # Add raw mode for ultra model if needed
-                'raw': model == FluxModel.PRO_1_1_ULTRA and os.getenv("FLUX_RAW_MODE", "false").lower() == "true"
-            }
-        ) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                raise Exception(f"FLUX API error: {response.status} - {error_text}")
-            
-            data = await response.json()
-            request_id = data.get("id")
-            polling_url = data.get("polling_url")
-            
-            if not polling_url:
-                raise Exception("No polling URL received from FLUX API")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                async with session.post(
+                    f'https://api.bfl.ai/v1/{model.endpoint}',
+                    headers={
+                        'accept': 'application/json',
+                        'x-key': api_key,
+                        'Content-Type': 'application/json',
+                    },
+                    json={
+                        'prompt': prompt,
+                        # Add raw mode for ultra model if needed
+                        'raw': model == FluxModel.PRO_1_1_ULTRA and os.getenv("FLUX_RAW_MODE", "false").lower() == "true"
+                    }
+                ) as response:
+                    if response.status == 429:
+                        # Rate limit exceeded, wait and retry
+                        wait_time = 2 ** attempt  # Exponential backoff
+                        print(f"Rate limited, waiting {wait_time}s before retry...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
+                    elif response.status == 402:
+                        # Insufficient credits
+                        raise Exception("Insufficient credits. Please add credits to your BFL account.")
+                    
+                    elif response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(f"FLUX API error: {response.status} - {error_text}")
+                    
+                    data = await response.json()
+                    request_id = data.get("id")
+                    polling_url = data.get("polling_url")
+                    
+                    if not polling_url:
+                        raise Exception("No polling URL received from FLUX API")
+                    
+                    break  # Success, exit retry loop
+                    
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise e
+                await asyncio.sleep(2 ** attempt)
         
         # Poll for the result
         max_attempts = 60  # 60 attempts with 2 second delays = 2 minutes max
@@ -127,7 +148,7 @@ async def generate_image_flux(
                         print(f"FLUX response structure: {poll_data}")
                         raise Exception("No image URL in FLUX response")
                 
-                elif poll_data.get("status") == "Error":
+                elif poll_data.get("status") in ["Error", "Failed"]:
                     error_msg = poll_data.get("error", "Unknown error")
                     raise Exception(f"FLUX generation error: {error_msg}")
         
