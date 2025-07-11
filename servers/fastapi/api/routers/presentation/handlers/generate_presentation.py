@@ -230,6 +230,10 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
                 print(json.dumps(slide, indent=2, ensure_ascii=False))
                 raise
                 
+            # Ensure slide has an ID
+            if "id" not in slide or not slide["id"]:
+                slide["id"] = str(uuid.uuid4())
+            
             slide_model = SlideModel(**slide)
             slide_models.append(slide_model)
 
