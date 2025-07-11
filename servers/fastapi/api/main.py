@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from api.models import SelectedLLMProvider
 from api.routers.presentation.router import presentation_router
+from api.routers.v2.presentation import router as v2_presentation_router
 from api.services.database import sql_engine
 from api.utils.utils import update_env_with_user_config
 from api.utils.model_utils import get_selected_llm_provider
@@ -55,3 +56,4 @@ async def update_env_middleware(request: Request, call_next):
 
 
 app.include_router(presentation_router)
+app.include_router(v2_presentation_router, prefix="/api/v2", tags=["v2"])

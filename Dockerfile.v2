@@ -1,0 +1,66 @@
+FROM python:3.11-slim-bookworm
+
+# Install Node.js and npm
+RUN apt-get update && apt-get install -y \
+    nodejs \  
+    npm \
+    nginx \
+    curl \
+    redis-server
+
+# Create a working directory
+WORKDIR /app  
+
+# Set environment variables
+ENV APP_DATA_DIRECTORY=/app/user_data
+ENV TEMP_DIRECTORY=/tmp/presenton
+
+# Install dependencies for FastAPI (includes V2 dependencies)
+COPY servers/fastapi/requirements.txt ./
+RUN pip install -r requirements.txt
+
+# Install dependencies for Next.js V1
+WORKDIR /app/servers/nextjs
+COPY servers/nextjs/package.json servers/nextjs/package-lock.json ./
+RUN npm install
+
+# Install dependencies for Next.js V2
+WORKDIR /app/servers/nextjs-v2
+COPY servers/nextjs-v2/package.json servers/nextjs-v2/package-lock.json ./
+RUN npm install
+
+# Install chrome for puppeteer (shared by both versions)
+RUN npx puppeteer browsers install chrome --install-deps
+
+# Copy Next.js V1 app
+COPY servers/nextjs/ /app/servers/nextjs/
+
+# Copy Next.js V2 app
+COPY servers/nextjs-v2/ /app/servers/nextjs-v2/
+
+# Build the Next.js V1 app
+WORKDIR /app/servers/nextjs
+RUN npm run build
+
+# Build the Next.js V2 app
+WORKDIR /app/servers/nextjs-v2
+RUN npm run build
+
+WORKDIR /app
+
+# Copy FastAPI (includes both V1 and V2 endpoints)
+COPY servers/fastapi/ ./servers/fastapi/
+COPY start.js LICENSE NOTICE ./
+
+# Copy nginx configuration for V2
+COPY nginx-v2.conf /etc/nginx/nginx.conf
+
+# Copy start script for V2
+COPY docker-start-v2.sh /app/docker-start-v2.sh
+RUN chmod +x /app/docker-start-v2.sh
+
+# Expose the ports
+EXPOSE 80 3001
+
+# Start the servers
+CMD ["/bin/bash", "/app/docker-start-v2.sh"]

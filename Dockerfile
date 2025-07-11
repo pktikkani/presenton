@@ -20,19 +20,31 @@ ENV TEMP_DIRECTORY=/tmp/presenton
 COPY servers/fastapi/requirements.txt ./
 RUN pip install -r requirements.txt
 
-# Install dependencies for Next.js
+# Install dependencies for Next.js V1
 WORKDIR /app/servers/nextjs
 COPY servers/nextjs/package.json servers/nextjs/package-lock.json ./
+RUN npm install
+
+# Install dependencies for Next.js V2
+WORKDIR /app/servers/nextjs-v2
+COPY servers/nextjs-v2/package.json servers/nextjs-v2/package-lock.json ./
 RUN npm install
 
 # Install chrome for puppeteer
 RUN npx puppeteer browsers install chrome --install-deps
 
-# Copy Next.js app
+# Copy Next.js V1 app
 COPY servers/nextjs/ /app/servers/nextjs/
 
-# Build the Next.js app
+# Copy Next.js V2 app
+COPY servers/nextjs-v2/ /app/servers/nextjs-v2/
+
+# Build the Next.js V1 app
 WORKDIR /app/servers/nextjs
+RUN npm run build
+
+# Build the Next.js V2 app
+WORKDIR /app/servers/nextjs-v2
 RUN npm run build
 
 WORKDIR /app
@@ -41,14 +53,15 @@ WORKDIR /app
 COPY servers/fastapi/ ./servers/fastapi/
 COPY start.js LICENSE NOTICE ./
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+# Copy nginx configuration for V2
+COPY nginx-v2.conf /etc/nginx/nginx.conf
 
-# Copy start script
-COPY docker-start.sh /app/docker-start.sh
+# Copy start script for V2
+COPY docker-start-v2.sh /app/docker-start-v2.sh
+RUN chmod +x /app/docker-start-v2.sh
 
-# Expose the port
-EXPOSE 80
+# Expose the ports
+EXPOSE 80 3001
 
 # Start the servers
-CMD ["/bin/bash", "/app/docker-start.sh"]
+CMD ["/bin/bash", "/app/docker-start-v2.sh"]
