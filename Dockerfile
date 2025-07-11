@@ -32,7 +32,7 @@ RUN echo '#!/bin/bash\n\
 echo "Starting API-only server..."\n\
 service redis-server start\n\
 cd /app/servers/fastapi\n\
-python server.py --port 8000 --host 0.0.0.0' > /app/start-api.sh && \
+python server.py --port 8000' > /app/start-api.sh && \
     chmod +x /app/start-api.sh
 
 # Start the API server
