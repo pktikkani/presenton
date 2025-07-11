@@ -118,8 +118,7 @@ async def generate_image_flux_v2(
             try:
                 request_data = {
                     'prompt': enhanced_prompt,
-                    'width': 1024,
-                    'height': 1024,
+                    'aspect_ratio': '1:1',  # Using aspect ratio as per BFL docs
                 }
                 
                 # Add raw mode for ultra model if enabled
@@ -145,15 +144,21 @@ async def generate_image_flux_v2(
                     elif response.status == 402:
                         raise Exception("Insufficient credits. Please add credits to your BFL account.")
                     
+                    elif response.status == 403:
+                        error_text = await response.text()
+                        print(f"FLUX 403 error details: {error_text}")
+                        raise Exception(f"FLUX API authentication error (403): {error_text}. Check your BFL_API_KEY.")
+                    
                     elif response.status != 200:
                         error_text = await response.text()
                         raise Exception(f"FLUX API error: {response.status} - {error_text}")
                     
                     data = await response.json()
                     request_id = data.get("id")
+                    polling_url = data.get("polling_url")
                     
-                    if not request_id:
-                        raise Exception("No request ID received from FLUX API")
+                    if not request_id or not polling_url:
+                        raise Exception("No request ID or polling URL received from FLUX API")
                     
                     break
                     
@@ -162,13 +167,13 @@ async def generate_image_flux_v2(
                     raise e
                 await asyncio.sleep(2 ** attempt)
         
-        # Poll for result
+        # Poll for result using the polling URL
         max_attempts = 90  # 3 minutes max
         for attempt in range(max_attempts):
             await asyncio.sleep(2)
             
             async with session.get(
-                f"https://api.bfl.ai/v1/get_result",
+                polling_url,
                 headers={
                     'accept': 'application/json',
                     'x-key': api_key,
