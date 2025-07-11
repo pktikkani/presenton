@@ -154,7 +154,7 @@ const DocumentsPreviewPage: React.FC = () => {
         documents: documentPaths,
         images: imageKeys,
         language: config?.language ?? "",
-        slide_mode: config?.slideMode,
+
       });
 
       try {

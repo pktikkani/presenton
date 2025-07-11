@@ -19,16 +19,24 @@ from api.services.instances import TEMP_FILE_SERVICE
 from api.services.logging import LoggingService
 from api.sql_models import PresentationSqlModel, SlideSqlModel
 from api.utils.utils import get_presentation_dir
+from api.utils.model_utils import is_custom_llm_selected, is_ollama_selected
 from document_processor.loader import DocumentsLoader
 from ppt_config_generator.document_summary_generator import generate_document_summary
 from ppt_config_generator.models import PresentationMarkdownModel
 from ppt_config_generator.ppt_outlines_generator import generate_ppt_content
 from ppt_generator.generator import generate_presentation
+# Import V2 generator if we're in V2 mode
+import os
+if os.environ.get("V2_SLIDE_MODE"):
+    try:
+        from ppt_generator.generator_v2 import generate_presentation_v2
+        use_v2_generator = True
+    except ImportError:
+        use_v2_generator = False
+else:
+    use_v2_generator = False
 from ppt_generator.models.llm_models import (
     LLM_CONTENT_TYPE_MAPPING,
-)
-from ppt_generator.models.llm_models_with_dynamic_validations import (
-    get_llm_content_type_mapping_with_validation,
 )
 from ppt_generator.models.slide_model import SlideModel
 
@@ -47,6 +55,11 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
         TEMP_FILE_SERVICE.cleanup_temp_dir(self.temp_dir)
 
     async def post(self, logging_service: LoggingService, log_metadata: LogMetadata):
+        if is_ollama_selected() or is_custom_llm_selected():
+            raise HTTPException(
+                status_code=400,
+                detail="Ollama is not currently supported for this endpoint",
+            )
 
         documents_and_images_path = await UploadFilesHandler(
             documents=self.data.documents,
@@ -73,42 +86,39 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
 
         print("-" * 40)
         print("Generating Presentation")
-        presentation_text = await generate_presentation(
-            PresentationMarkdownModel(
-                title=presentation_content.title,
-                slides=presentation_content.slides,
-                notes=presentation_content.notes,
-            ),
-            self.data.slide_mode
-        )
+        
+        # Use V2 generator if available and in V2 mode
+        if use_v2_generator and os.environ.get("V2_SLIDE_MODE"):
+            print(f"Using V2 generator with mode: {os.environ.get('V2_SLIDE_MODE')}")
+            presentation_text = await generate_presentation_v2(
+                PresentationMarkdownModel(
+                    title=presentation_content.title,
+                    slides=presentation_content.slides,
+                    notes=presentation_content.notes,
+                )
+            )
+        else:
+            presentation_text = await generate_presentation(
+                PresentationMarkdownModel(
+                    title=presentation_content.title,
+                    slides=presentation_content.slides,
+                    notes=presentation_content.notes,
+                )
+            )
 
         print("-" * 40)
         print("Parsing Presentation")
         presentation_json = json.loads(presentation_text)
 
-        # Get dynamic content type mapping based on slide mode
-        content_type_mapping = get_llm_content_type_mapping_with_validation(self.data.slide_mode)
-        
         slide_models: List[SlideModel] = []
         for i, slide in enumerate(presentation_json["slides"]):
             slide["index"] = i
             slide["presentation"] = self.presentation_id
-            
-            # Try dynamic validation first, fall back to standard if it fails
-            try:
-                slide["content"] = (
-                    content_type_mapping[slide["type"]](**slide["content"])
-                    .to_content()
-                    .model_dump(mode="json")
-                )
-            except Exception as e:
-                print(f"Dynamic validation failed for slide {i}, using standard: {e}")
-                slide["content"] = (
-                    LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
-                    .to_content()
-                    .model_dump(mode="json")
-                )
-            
+            slide["content"] = (
+                LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
+                .to_content()
+                .model_dump(mode="json")
+            )
             slide_model = SlideModel(**slide)
             slide_models.append(slide_model)
 
@@ -139,7 +149,6 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
             title=presentation_content.title,
             outlines=[each.model_dump() for each in presentation_content.slides],
             notes=presentation_content.notes,
-            slide_mode=self.data.slide_mode,
         )
 
         with get_sql_session() as sql_session:

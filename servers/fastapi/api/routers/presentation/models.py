@@ -4,6 +4,7 @@ from typing import List, Literal, Optional
 from fastapi import UploadFile
 from pydantic import BaseModel, Field
 
+from api.models import OllamaModelMetadata
 from ppt_config_generator.models import SlideMarkdownModel
 from ppt_generator.models.pptx_models import PptxPresentationModel
 from ppt_generator.models.query_and_prompt_models import (
@@ -12,6 +13,7 @@ from ppt_generator.models.query_and_prompt_models import (
 )
 from ppt_generator.models.slide_model import SlideModel
 from api.sql_models import PresentationSqlModel, SlideSqlModel
+from ollama._types import ModelDetails
 
 
 class ThemeEnum(Enum):
@@ -45,7 +47,6 @@ class GeneratePresentationRequirementsRequest(BaseModel):
     documents: Optional[List[str]] = None
     research_reports: Optional[List[str]] = None
     images: Optional[List[str]] = None
-    slide_mode: Literal["compact", "normal", "detailed"] = Field(default="normal")
 
 
 class GenerateOutlinesRequest(BaseModel):
@@ -164,5 +165,15 @@ class GeneratePresentationRequest(BaseModel):
     theme: ThemeEnum = Field(default=ThemeEnum.LIGHT)
     documents: Optional[List[UploadFile]] = None
     export_as: Literal["pptx", "pdf"] = Field(default="pptx")
-    slide_mode: Literal["compact", "normal", "detailed"] = Field(default="normal")
 
+
+class OllamaModelStatusResponse(BaseModel):
+    name: str
+    size: Optional[int] = None
+    downloaded: Optional[int] = None
+    status: str
+    done: bool
+
+
+class OllamaSupportedModelsResponse(BaseModel):
+    models: List[OllamaModelMetadata]

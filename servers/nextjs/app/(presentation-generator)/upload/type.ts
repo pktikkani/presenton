@@ -117,11 +117,8 @@ export enum LanguageType {
   Samoan = "Samoan (Gagana Samoa)",
 }
 
-export type SlideMode = "compact" | "normal" | "detailed";
-
 export interface PresentationConfig {
   slides: "5" | "8" | "10" | "12" | "15" | null;
   language: LanguageType | null;
   prompt: string;
-  slideMode?: SlideMode;
 }

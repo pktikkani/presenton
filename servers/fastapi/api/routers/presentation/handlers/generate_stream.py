@@ -18,6 +18,7 @@ from api.services.database import get_sql_session
 from api.services.logging import LoggingService
 from api.sql_models import KeyValueSqlModel, PresentationSqlModel, SlideSqlModel
 from api.utils.utils import get_presentation_dir
+from api.utils.model_utils import is_custom_llm_selected, is_ollama_selected
 from ppt_config_generator.models import (
     PresentationMarkdownModel,
     PresentationStructureModel,
@@ -27,9 +28,6 @@ from ppt_generator.models.llm_models import (
     LLM_CONTENT_TYPE_MAPPING,
     LLMPresentationModel,
     LLMSlideModel,
-)
-from ppt_generator.models.llm_models_with_dynamic_validations import (
-    get_llm_content_type_mapping_with_validation,
 )
 from ppt_generator.models.slide_model import SlideModel
 from api.services.instances import TEMP_FILE_SERVICE
@@ -101,33 +99,22 @@ class PresentationGenerateStreamHandler(FetchAssetsOnPresentationGenerationMixin
         self.presentation_json = None
 
         # self.presentation_json will be mutated by the generator
-        async for result in self.generate_presentation_openai_google():
-            yield result
+        if is_ollama_selected() or is_custom_llm_selected():
+            async for result in self.generate_presentation_ollama_custom():
+                yield result
+        else:
+            async for result in self.generate_presentation_openai_google():
+                yield result
 
-        # Get dynamic content type mapping based on slide mode
-        slide_mode = self.presentation.slide_mode or "normal"
-        content_type_mapping = get_llm_content_type_mapping_with_validation(slide_mode)
-        
         slide_models: List[SlideModel] = []
         for i, slide in enumerate(self.presentation_json["slides"]):
             slide["index"] = i
             slide["presentation"] = self.presentation.id
-            
-            # Try dynamic validation first, fall back to standard if it fails
-            try:
-                slide["content"] = (
-                    content_type_mapping[slide["type"]](**slide["content"])
-                    .to_content()
-                    .model_dump(mode="json")
-                )
-            except Exception as e:
-                print(f"Dynamic validation failed for slide {i}, using standard: {e}")
-                slide["content"] = (
-                    LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
-                    .to_content()
-                    .model_dump(mode="json")
-                )
-                
+            slide["content"] = (
+                LLM_CONTENT_TYPE_MAPPING[slide["type"]](**slide["content"])
+                .to_content()
+                .model_dump(mode="json")
+            )
             slide_model = SlideModel(**slide)
             slide_models.append(slide_model)
 
@@ -159,8 +146,7 @@ class PresentationGenerateStreamHandler(FetchAssetsOnPresentationGenerationMixin
                 title=self.title,
                 slides=self.outlines,
                 notes=self.presentation.notes,
-            ),
-            self.presentation.slide_mode or "normal"
+            )
         ):
             chunk = event.choices[0].delta.content
 
@@ -176,3 +162,46 @@ class PresentationGenerateStreamHandler(FetchAssetsOnPresentationGenerationMixin
 
         self.presentation_json = json.loads(presentation_text)
 
+    async def generate_presentation_ollama_custom(self):
+        presentation_structure = PresentationStructureModel(
+            **self.presentation.structure
+        )
+        slide_models = []
+        yield SSEResponse(
+            event="response",
+            data=json.dumps({"type": "chunk", "chunk": '{ "slides": [ '}),
+        ).to_string()
+        n_slides = len(presentation_structure.slides)
+        for i, slide_structure in enumerate(presentation_structure.slides):
+            # Informing about the start of the slide
+            # This is to make sure that the client renders slide n
+            # when it receives start chunk of slide n + 1
+            yield SSEResponse(
+                event="response",
+                data=json.dumps({"type": "chunk", "chunk": "{"}),
+            ).to_string()
+
+            slide_content = await get_slide_content_from_type_and_outline(
+                slide_structure.type, self.outlines[i]
+            )
+            slide_model = LLMSlideModel(
+                type=slide_structure.type,
+                content=slide_content.model_dump(mode="json"),
+            )
+            slide_models.append(slide_model)
+            chunk = json.dumps(slide_model.model_dump(mode="json"))
+
+            if i < n_slides - 1:
+                chunk += ","
+            yield SSEResponse(
+                event="response",
+                data=json.dumps({"type": "chunk", "chunk": chunk[1:]}),
+            ).to_string()
+        yield SSEResponse(
+            event="response",
+            data=json.dumps({"type": "chunk", "chunk": " ] }"}),
+        ).to_string()
+
+        self.presentation_json = LLMPresentationModel(
+            slides=slide_models,
+        ).model_dump(mode="json")

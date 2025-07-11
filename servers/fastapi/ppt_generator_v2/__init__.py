@@ -1,1 +1,0 @@
-"""PydanticAI-based Presentation Generator V2"""

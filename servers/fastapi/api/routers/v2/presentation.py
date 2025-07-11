@@ -1,249 +1,171 @@
-"""V2 Presentation API endpoints using PydanticAI"""
+"""V2 Presentation API endpoints with enhanced features"""
 import uuid
-import json
-from typing import Optional
-
-from fastapi import APIRouter, HTTPException, Depends, Form
+from typing import Annotated, List, Optional
+from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 
-from api.models import ThemeNames
-from api.services.database import get_sql_session
-from api.sql_models import PresentationSqlModel, SlideSqlModel
-from api.utils.utils import get_presentation_dir, handle_errors
-from api.services.logging import LoggingService, get_log_metadata
-
-from ppt_config_generator.models import PresentationMarkdownModel
-from ppt_config_generator.ppt_outlines_generator import generate_ppt_content
-from ppt_generator_v2.generator import generate_presentation_v2, generate_presentation_stream_v2
-from ppt_generator.models.slide_model import SlideModel
-
-# Import the asset fetching mixin from v1
-from api.routers.presentation.mixins.fetch_assets_on_generation import (
-    FetchAssetsOnPresentationGenerationMixin
+from api.routers.v2.models import (
+    GeneratePresentationRequestV2,
+    AvailableModelsResponse,
+    SlideMode,
+    ImageProvider,
+    FluxModel
 )
+from api.routers.presentation.models import (
+    PresentationPathAndEditPath,
+    ThemeEnum
+)
+from api.request_utils import RequestUtils
+from api.utils.utils import handle_errors
+from api.utils.model_utils_v2 import model_manager_v2
+from api.models import SelectedLLMProvider
+from api.utils.model_utils import get_selected_llm_provider
+
+# Import V1 handler and modify for V2
+from api.routers.presentation.handlers.generate_presentation import GeneratePresentationHandler
+from api.routers.presentation.models import GeneratePresentationRequest
+
+router = APIRouter(prefix="/api/v2/ppt", tags=["presentation-v2"])
 
 
-router = APIRouter(prefix="/ppt", tags=["presentation-v2"])
-
-
-class GeneratePresentationRequestV2(BaseModel):
-    """V2 Request model with model validation"""
-    prompt: Optional[str] = Field(None, description="Main prompt for presentation")
-    n_slides: int = Field(5, ge=3, le=20, description="Number of slides")
-    language: Optional[str] = Field("en", description="Language code")
-    content: Optional[str] = Field(None, description="Additional content")
-    theme: ThemeNames = Field(ThemeNames.YELLOW, description="Presentation theme")
-    slide_mode: str = Field("normal", description="Slide mode: compact, normal, detailed")
-    model: Optional[str] = Field(None, description="Specific model to use (e.g., gpt-4o, gemini-1.5-pro)")
-
-
-class GeneratePresentationHandlerV2(FetchAssetsOnPresentationGenerationMixin):
-    """V2 handler using PydanticAI"""
-    
-    def __init__(self, presentation_id: str, data: GeneratePresentationRequestV2):
-        self.presentation_id = presentation_id
-        self.data = data
-        self.theme = {"name": data.theme.value, "colors": {}}
-        self.session = str(uuid.uuid4())
-    
-    async def generate(self, logging_service: LoggingService, log_metadata: dict):
-        """Generate presentation using V2 with PydanticAI"""
-        
-        # Log request
-        logging_service.logger.info(
-            f"V2 Presentation generation request: {self.data.model_dump()}",
-            extra=log_metadata
-        )
-        
-        # Generate outline first (using existing v1 function)
-        print("-" * 40)
-        print("V2: Generating PPT Outline")
-        presentation_content = await generate_ppt_content(
-            self.data.prompt,
-            self.data.n_slides,
-            self.data.language,
-            self.data.content,
-        )
-        
-        # Generate presentation with V2
-        print("-" * 40)
-        print("V2: Generating Presentation with PydanticAI")
-        try:
-            presentation_json = await generate_presentation_v2(
-                PresentationMarkdownModel(
-                    title=presentation_content.title,
-                    slides=presentation_content.slides,
-                    notes=presentation_content.notes,
-                ),
-                self.data.slide_mode,
-                self.data.model
-            )
-        except ValueError as e:
-            logging_service.logger.error(f"V2 Generation failed: {str(e)}", extra=log_metadata)
-            raise HTTPException(status_code=400, detail=str(e))
-        
-        # Convert to slide models
-        slide_models = []
-        for i, slide in enumerate(presentation_json["slides"]):
-            slide["index"] = i
-            slide["presentation"] = self.presentation_id
-            slide_model = SlideModel(**slide)
-            slide_models.append(slide_model)
-        
-        # Fetch assets (images, icons)
-        print("-" * 40)
-        print("V2: Fetching Slide Assets")
-        async for result in self.fetch_slide_assets(slide_models):
-            print(result)
-        
-        # Save to database
-        slide_sql_models = [
-            SlideSqlModel(**each.model_dump(mode="json")) for each in slide_models
-        ]
-        
-        presentation = PresentationSqlModel(
-            id=self.presentation_id,
-            prompt=self.data.prompt,
-            n_slides=self.data.n_slides,
-            language=self.data.language,
-            summary=self.data.content,
-            theme=self.theme,
-            title=presentation_content.title,
-            outlines=[each.model_dump() for each in presentation_content.slides],
-            notes=presentation_content.notes,
-            slide_mode=self.data.slide_mode,
-        )
-        
-        with get_sql_session() as sql_session:
-            sql_session.add(presentation)
-            sql_session.add_all(slide_sql_models)
-            sql_session.commit()
-            for each in slide_sql_models:
-                sql_session.refresh(each)
-            sql_session.refresh(presentation)
-        
-        logging_service.logger.info(
-            f"V2 Presentation generated successfully: {self.presentation_id}",
-            extra=log_metadata
-        )
-        
-        return {
-            "id": self.presentation_id,
-            "title": presentation.title,
-            "slides": [s.model_dump() for s in slide_sql_models],
-            "theme": self.theme,
-            "message": "Presentation generated successfully with V2"
-        }
-
-
-@router.post("/generate/presentation")
-async def generate_presentation_v2_endpoint(
-    prompt: Optional[str] = Form(None),
-    n_slides: int = Form(5),
-    language: Optional[str] = Form("English"),
-    content: Optional[str] = Form(None),
-    theme: str = Form("yellow"),
-    slide_mode: str = Form("normal"),
-    model: Optional[str] = Form(None),
-    export_as: Optional[str] = Form(None),
-    logging_service: LoggingService = Depends(),
+@router.post("/generate/presentation", response_model=PresentationPathAndEditPath)
+async def generate_presentation_v2(
+    prompt: Annotated[str, Form(...)],
+    n_slides: Annotated[int, Form()] = 8,
+    language: Annotated[str, Form()] = "English",
+    theme: Annotated[str, Form()] = "light",
+    slide_mode: Annotated[str, Form()] = "normal",
+    model: Annotated[Optional[str], Form()] = None,
+    image_provider: Annotated[Optional[str], Form()] = None,
+    flux_model: Annotated[Optional[str], Form()] = None,
+    export_as: Annotated[str, Form()] = "pptx",
 ):
-    """V2 endpoint for presentation generation with PydanticAI"""
-    
+    """Enhanced presentation generation with V2 features"""
     presentation_id = str(uuid.uuid4())
-    log_metadata = get_log_metadata(presentation_id)
+    request_utils = RequestUtils(f"/api/v2/ppt/generate/presentation")
+    logging_service, log_metadata = await request_utils.initialize_logger(
+        presentation_id=presentation_id,
+    )
     
-    async def generate():
-        # Create request object from form data
-        request = GeneratePresentationRequestV2(
+    try:
+        # Validate inputs
+        slide_mode_enum = SlideMode(slide_mode)
+        theme_enum = ThemeEnum(theme.upper() if theme else "LIGHT")
+        
+        # Validate model if specified
+        if model:
+            validated_model = await model_manager_v2.validate_model(model)
+        else:
+            validated_model = None
+        
+        # Validate image provider
+        image_provider_enum = None
+        if image_provider:
+            image_provider_enum = ImageProvider(image_provider)
+        
+        # Validate Flux model if using Flux
+        flux_model_enum = None
+        if flux_model and image_provider == "flux":
+            flux_model_enum = FluxModel(flux_model)
+        
+        # Create V1 compatible request
+        v1_request = GeneratePresentationRequest(
             prompt=prompt,
             n_slides=n_slides,
             language=language,
-            content=content,
-            theme=ThemeNames(theme) if theme else ThemeNames.YELLOW,
-            slide_mode=slide_mode,
-            model=model
+            theme=theme_enum,
+            export_as=export_as
         )
         
-        handler = GeneratePresentationHandlerV2(presentation_id, request)
-        return await handler.generate(logging_service, log_metadata)
-    
-    return await handle_errors(
-        generate,
-        HTTPException(500, "V2 Presentation generation failed"),
-        logging_service,
-        log_metadata
-    )
+        # Create enhanced V2 handler
+        handler = GeneratePresentationHandlerV2(
+            presentation_id=presentation_id,
+            data=v1_request,
+            slide_mode=slide_mode_enum,
+            model=validated_model,
+            image_provider=image_provider_enum,
+            flux_model=flux_model_enum
+        )
+        
+        return await handle_errors(
+            handler.post,
+            logging_service,
+            log_metadata,
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/generate/presentation/stream")
-async def generate_presentation_stream_v2_endpoint(
-    request: GeneratePresentationRequestV2,
-    logging_service: LoggingService,
-):
-    """V2 streaming endpoint (simulated streaming for now)"""
-    
-    presentation_id = str(uuid.uuid4())
-    log_metadata = get_log_metadata(presentation_id)
-    
-    logging_service.logger.info(
-        f"V2 Stream generation request: {request.model_dump()}",
-        extra=log_metadata
-    )
-    
-    async def stream_generator():
-        try:
-            # Generate outline
-            yield f"data: {json.dumps({'status': 'Generating outline...'})}\n\n"
-            
-            presentation_content = await generate_ppt_content(
-                request.prompt,
-                request.n_slides,
-                request.language,
-                request.content,
-            )
-            
-            yield f"data: {json.dumps({'status': 'Generating presentation with AI...'})}\n\n"
-            
-            # Stream presentation generation
-            async for chunk in generate_presentation_stream_v2(
-                PresentationMarkdownModel(
-                    title=presentation_content.title,
-                    slides=presentation_content.slides,
-                    notes=presentation_content.notes,
-                ),
-                request.slide_mode,
-                request.model
-            ):
-                yield chunk
-                
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-    
-    return StreamingResponse(
-        stream_generator(),
-        media_type="text/event-stream"
-    )
-
-
-@router.get("/models")
+@router.get("/models", response_model=AvailableModelsResponse)
 async def get_available_models():
     """Get list of available models for current provider"""
-    from ppt_generator_v2.model_manager import model_manager
-    from api.utils.model_utils import get_selected_llm_provider
-    from api.models import SelectedLLMProvider
-    
     provider = get_selected_llm_provider()
     
     if provider == SelectedLLMProvider.OPENAI:
-        models = await model_manager.get_available_openai_models()
+        models = await model_manager_v2.get_available_openai_models()
+        default = "gpt-4o"
     elif provider == SelectedLLMProvider.GOOGLE:
-        models = await model_manager.get_available_gemini_models()
+        models = await model_manager_v2.get_available_google_models()
+        default = "gemini-2.0-flash"
     else:
-        models = set()
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Model listing not available for provider: {provider.value}"
+        )
     
-    return {
-        "provider": provider.value,
-        "models": sorted(list(models))
-    }
+    return AvailableModelsResponse(
+        provider=provider.value,
+        models=sorted(list(models)),
+        default_model=default
+    )
+
+
+# Enhanced V2 handler that extends V1
+class GeneratePresentationHandlerV2(GeneratePresentationHandler):
+    """Enhanced presentation handler with V2 features"""
+    
+    def __init__(
+        self,
+        presentation_id: str,
+        data: GeneratePresentationRequest,
+        slide_mode: SlideMode,
+        model: Optional[str] = None,
+        image_provider: Optional[ImageProvider] = None,
+        flux_model: Optional[FluxModel] = None
+    ):
+        super().__init__(presentation_id, data)
+        self.slide_mode = slide_mode
+        self.model = model
+        self.image_provider = image_provider
+        self.flux_model = flux_model
+        
+        # Store V2 config in session for use by generators
+        self.v2_config = {
+            "slide_mode": slide_mode.value,
+            "model": model,
+            "image_provider": image_provider.value if image_provider else None,
+            "flux_model": flux_model.value if flux_model else None
+        }
+    
+    async def post(self, logging_service, log_metadata):
+        """Override to inject V2 configuration"""
+        # Inject V2 config into environment or context
+        import os
+        if self.model:
+            os.environ["V2_MODEL_OVERRIDE"] = self.model
+        if self.slide_mode:
+            os.environ["V2_SLIDE_MODE"] = self.slide_mode.value
+        if self.image_provider:
+            os.environ["V2_IMAGE_PROVIDER"] = self.image_provider.value
+        if self.flux_model:
+            os.environ["V2_FLUX_MODEL"] = self.flux_model.value
+        
+        try:
+            # Call parent implementation
+            result = await super().post(logging_service, log_metadata)
+            return result
+        finally:
+            # Clean up environment
+            for key in ["V2_MODEL_OVERRIDE", "V2_SLIDE_MODE", "V2_IMAGE_PROVIDER", "V2_FLUX_MODEL"]:
+                os.environ.pop(key, None)

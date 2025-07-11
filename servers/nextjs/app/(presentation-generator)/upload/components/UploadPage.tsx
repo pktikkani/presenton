@@ -70,7 +70,6 @@ const UploadPage = () => {
     slides: "8",
     language: LanguageType.English,
     prompt: "",
-    slideMode: "normal",
   });
 
   const [loadingState, setLoadingState] = useState<LoadingState>({
@@ -230,8 +229,9 @@ const UploadPage = () => {
       n_slides: config?.slides ? parseInt(config.slides) : null,
       documents: [],
       images: [],
+
       language: config?.language ?? "",
-      slide_mode: config?.slideMode,
+
     });
 
     try {

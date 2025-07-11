@@ -2,40 +2,45 @@ import asyncio
 import os
 import uuid
 import aiohttp
-import time
-from typing import Optional, Literal
-from enum import Enum
+from google import genai
+from google.genai.types import GenerateContentConfig
 
 from ppt_generator.models.query_and_prompt_models import (
     ImagePromptWithThemeAndAspectRatio,
 )
 from api.utils.utils import download_file, get_resource
-
-
-class FluxModel(Enum):
-    KONTEXT_MAX = ("flux-kontext-max", 0.08)
-    KONTEXT_PRO = ("flux-kontext-pro", 0.04)
-    PRO_1_1_ULTRA = ("flux-pro-1.1-ultra", 0.06)
-    PRO_1_1 = ("flux-pro-1.1", 0.04)
-    PRO = ("flux-pro", 0.05)
-    DEV = ("flux-dev", 0.025)
-    
-    def __init__(self, endpoint: str, price: float):
-        self.endpoint = endpoint
-        self.price = price
+from api.utils.model_utils import (
+    get_llm_client,
+    is_custom_llm_selected,
+    is_ollama_selected,
+)
 
 
 async def generate_image(
     input: ImagePromptWithThemeAndAspectRatio,
     output_directory: str,
 ) -> str:
-    # Combine image prompt with theme prompt for better results
-    image_prompt = f"{input.image_prompt}, {input.theme_prompt}"
+    is_ollama = is_ollama_selected()
+    is_custom_llm = is_custom_llm_selected()
+
+    image_prompt = (
+        input.image_prompt
+        if is_ollama or is_custom_llm
+        else f"{input.image_prompt}, {input.theme_prompt}"
+    )
     print(f"Request - Generating Image for {image_prompt}")
 
     try:
-        # Always use FLUX for image generation
-        image_path = await generate_image_flux(image_prompt, output_directory)
+        image_gen_func = (
+            get_image_from_pexels
+            if is_ollama or is_custom_llm
+            else (
+                generate_image_openai
+                if os.getenv("LLM") == "openai"
+                else generate_image_google
+            )
+        )
+        image_path = await image_gen_func(image_prompt, output_directory)
         if image_path and os.path.exists(image_path):
             return image_path
         raise Exception(f"Image not found at {image_path}")
@@ -45,111 +50,53 @@ async def generate_image(
         return get_resource("assets/images/placeholder.jpg")
 
 
-async def generate_image_flux(
-    prompt: str, 
-    output_directory: str,
-    model: FluxModel = None
-) -> str:
-    """Generate image using FLUX API"""
-    # Use the model specified in environment or default to DEV
-    if model is None:
-        model_name = os.getenv("FLUX_MODEL", "DEV")
-        model = FluxModel[model_name] if hasattr(FluxModel, model_name) else FluxModel.DEV
-    
-    api_key = os.getenv("BFL_API_KEY")
-    if not api_key:
-        raise Exception("BFL_API_KEY environment variable is not set")
-    
-    print(f"Using FLUX model: {model.name} (${model.price}/image)")
-    
-    # Make the initial request to FLUX API with retry logic
+async def generate_image_openai(prompt: str, output_directory: str) -> str:
+    client = get_llm_client()
+    result = await client.images.generate(
+        model="dall-e-3",
+        prompt=prompt,
+        n=1,
+        quality="standard",
+        size="1024x1024",
+    )
+    image_url = result.data[0].url
     async with aiohttp.ClientSession() as session:
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                async with session.post(
-                    f'https://api.bfl.ai/v1/{model.endpoint}',
-                    headers={
-                        'accept': 'application/json',
-                        'x-key': api_key,
-                        'Content-Type': 'application/json',
-                    },
-                    json={
-                        'prompt': prompt,
-                        # Add raw mode for ultra model if needed
-                        'raw': model == FluxModel.PRO_1_1_ULTRA and os.getenv("FLUX_RAW_MODE", "false").lower() == "true"
-                    }
-                ) as response:
-                    if response.status == 429:
-                        # Rate limit exceeded, wait and retry
-                        wait_time = 2 ** attempt  # Exponential backoff
-                        print(f"Rate limited, waiting {wait_time}s before retry...")
-                        await asyncio.sleep(wait_time)
-                        continue
-                    
-                    elif response.status == 402:
-                        # Insufficient credits
-                        raise Exception("Insufficient credits. Please add credits to your BFL account.")
-                    
-                    elif response.status != 200:
-                        error_text = await response.text()
-                        raise Exception(f"FLUX API error: {response.status} - {error_text}")
-                    
-                    data = await response.json()
-                    request_id = data.get("id")
-                    polling_url = data.get("polling_url")
-                    
-                    if not polling_url:
-                        raise Exception("No polling URL received from FLUX API")
-                    
-                    break  # Success, exit retry loop
-                    
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise e
-                await asyncio.sleep(2 ** attempt)
-        
-        # Poll for the result
-        max_attempts = 60  # 60 attempts with 2 second delays = 2 minutes max
-        for attempt in range(max_attempts):
-            await asyncio.sleep(2)  # Wait 2 seconds between polls
-            
-            async with session.get(
-                polling_url,
-                headers={
-                    'accept': 'application/json',
-                    'x-key': api_key,
-                },
-                params={'id': request_id}
-            ) as poll_response:
-                if poll_response.status != 200:
-                    continue
-                    
-                poll_data = await poll_response.json()
-                
-                if poll_data.get("status") == "Ready":
-                    # According to FLUX docs, the image URL is at result.sample
-                    result = poll_data.get("result", {})
-                    image_url = result.get("sample")
-                    
-                    if image_url:
-                        # Download the image
-                        async with session.get(image_url) as image_response:
-                            if image_response.status == 200:
-                                image_bytes = await image_response.read()
-                                image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
-                                with open(image_path, "wb") as f:
-                                    f.write(image_bytes)
-                                print(f"Image saved to: {image_path}")
-                                return image_path
-                            else:
-                                raise Exception(f"Failed to download image from FLUX: HTTP {image_response.status}")
-                    else:
-                        print(f"FLUX response structure: {poll_data}")
-                        raise Exception("No image URL in FLUX response")
-                
-                elif poll_data.get("status") in ["Error", "Failed"]:
-                    error_msg = poll_data.get("error", "Unknown error")
-                    raise Exception(f"FLUX generation error: {error_msg}")
-        
-        raise Exception("FLUX image generation timed out after 2 minutes")
+        async with session.get(image_url) as response:
+            image_bytes = await response.read()
+            image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
+            with open(image_path, "wb") as f:
+                f.write(image_bytes)
+            return image_path
+
+
+async def generate_image_google(prompt: str, output_directory: str) -> str:
+    client = genai.Client()
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model="gemini-2.0-flash-preview-image-generation",
+        contents=[prompt],
+        config=GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+    )
+
+    for part in response.candidates[0].content.parts:
+        if part.text is not None:
+            print(part.text)
+        elif part.inline_data is not None:
+            image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
+            with open(image_path, "wb") as f:
+                f.write(part.inline_data.data)
+
+    return image_path
+
+
+async def get_image_from_pexels(prompt: str, output_directory: str) -> str:
+    async with aiohttp.ClientSession() as session:
+        response = await session.get(
+            f"https://api.pexels.com/v1/search?query={prompt}&per_page=1",
+            headers={"Authorization": f'{os.getenv("PEXELS_API_KEY")}'},
+        )
+        data = await response.json()
+        image_url = data["photos"][0]["src"]["large"]
+        image_path = os.path.join(output_directory, f"{str(uuid.uuid4())}.jpg")
+        await download_file(image_url, image_path)
+        return image_path

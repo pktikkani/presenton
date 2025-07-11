@@ -15,36 +15,26 @@ WORKDIR /app
 ENV APP_DATA_DIRECTORY=/app/user_data
 ENV TEMP_DIRECTORY=/tmp/presenton
 
+# Install ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
 
 # Install dependencies for FastAPI
 COPY servers/fastapi/requirements.txt ./
 RUN pip install -r requirements.txt
 
-# Install dependencies for Next.js V1
+# Install dependencies for Next.js
 WORKDIR /app/servers/nextjs
 COPY servers/nextjs/package.json servers/nextjs/package-lock.json ./
-RUN npm install
-
-# Install dependencies for Next.js V2
-WORKDIR /app/servers/nextjs-v2
-COPY servers/nextjs-v2/package.json servers/nextjs-v2/package-lock.json ./
 RUN npm install
 
 # Install chrome for puppeteer
 RUN npx puppeteer browsers install chrome --install-deps
 
-# Copy Next.js V1 app
+# Copy Next.js app
 COPY servers/nextjs/ /app/servers/nextjs/
 
-# Copy Next.js V2 app
-COPY servers/nextjs-v2/ /app/servers/nextjs-v2/
-
-# Build the Next.js V1 app
+# Build the Next.js app
 WORKDIR /app/servers/nextjs
-RUN npm run build
-
-# Build the Next.js V2 app
-WORKDIR /app/servers/nextjs-v2
 RUN npm run build
 
 WORKDIR /app
@@ -53,15 +43,14 @@ WORKDIR /app
 COPY servers/fastapi/ ./servers/fastapi/
 COPY start.js LICENSE NOTICE ./
 
-# Copy nginx configuration for V2
-COPY nginx-v2.conf /etc/nginx/nginx.conf
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
-# Copy start script for V2
-COPY docker-start-v2.sh /app/docker-start-v2.sh
-RUN chmod +x /app/docker-start-v2.sh
+# Copy start script
+COPY docker-start.sh /app/docker-start.sh
 
-# Expose the ports
-EXPOSE 80 3001
+# Expose the port
+EXPOSE 80
 
 # Start the servers
-CMD ["/bin/bash", "/app/docker-start-v2.sh"]
+CMD ["/bin/bash", "/app/docker-start.sh"]

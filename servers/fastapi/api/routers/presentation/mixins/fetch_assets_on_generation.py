@@ -6,6 +6,17 @@ from api.utils.utils import get_presentation_images_dir
 from image_processor.icons_finder import get_icon
 from image_processor.icons_vectorstore_utils import get_icons_vectorstore
 from image_processor.images_finder import generate_image
+# Import V2 image generator if available
+import os
+if os.environ.get("V2_IMAGE_PROVIDER"):
+    try:
+        from image_processor.images_finder_v2 import generate_image_v2
+        from api.routers.v2.models import ImageProvider, FluxModel
+        use_v2_image_generator = True
+    except ImportError:
+        use_v2_image_generator = False
+else:
+    use_v2_image_generator = False
 from ppt_generator.models.slide_model import SlideModel
 from ppt_generator.slide_model_utils import SlideModelUtils
 
@@ -26,13 +37,30 @@ class FetchAssetsOnPresentationGenerationMixin:
 
         images_directory = get_presentation_images_dir(self.presentation_id)
 
-        coroutines = [
-            generate_image(
-                each,
-                images_directory,
-            )
-            for each in image_prompts
-        ] + [get_icon(icon_vector_store, each) for each in icon_queries]
+        # Use V2 image generator if available
+        if use_v2_image_generator and os.environ.get("V2_IMAGE_PROVIDER"):
+            image_provider = ImageProvider(os.environ.get("V2_IMAGE_PROVIDER"))
+            flux_model = None
+            if os.environ.get("V2_FLUX_MODEL"):
+                flux_model = FluxModel(os.environ.get("V2_FLUX_MODEL"))
+            
+            coroutines = [
+                generate_image_v2(
+                    each,
+                    images_directory,
+                    provider=image_provider,
+                    flux_model=flux_model,
+                )
+                for each in image_prompts
+            ] + [get_icon(icon_vector_store, each) for each in icon_queries]
+        else:
+            coroutines = [
+                generate_image(
+                    each,
+                    images_directory,
+                )
+                for each in image_prompts
+            ] + [get_icon(icon_vector_store, each) for each in icon_queries]
 
         assets_future = asyncio.gather(*coroutines)
 

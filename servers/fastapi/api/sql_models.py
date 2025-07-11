@@ -28,7 +28,6 @@ class PresentationSqlModel(SQLModel, table=True):
     language: Optional[str] = None
     summary: Optional[str] = None
     thumbnail: Optional[str] = None
-    slide_mode: Optional[str] = Field(default="normal")
     data: Optional[dict] = Field(sa_column=Column(JSON, nullable=True), default=None)
 
 
