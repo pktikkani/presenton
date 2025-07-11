@@ -75,9 +75,6 @@ from api.routers.presentation.models import (
 from api.sql_models import PresentationSqlModel
 from api.utils.model_utils import get_llm_client
 from api.utils.utils import handle_errors
-from image_processor.images_finder import (
-    generate_image_google,
-)
 from ppt_generator.models.slide_model import SlideModel
 
 route_prefix = "/api/v1/ppt"
