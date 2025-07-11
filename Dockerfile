@@ -19,6 +19,7 @@ RUN mkdir -p /app/user_data && chmod 777 /app/user_data
 # Set environment variables
 ENV APP_DATA_DIRECTORY=/app/user_data
 ENV PYTHONPATH=/app/servers/fastapi
+ENV TEMP_DIRECTORY=/tmp/presenton
 
 # Install Python dependencies
 WORKDIR /app/servers/fastapi
