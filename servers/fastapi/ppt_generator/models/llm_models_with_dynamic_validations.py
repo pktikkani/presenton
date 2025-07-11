@@ -28,26 +28,26 @@ def create_dynamic_validation_model(
     new_fields = {}
     
     # Copy existing fields and update with new constraints
-    for field_name, field_info in base_model.__fields__.items():
+    for field_name, field_info in base_model.model_fields.items():
         if field_name in field_configs:
             config = field_configs[field_name]
             limit_key = config.get("limit_key", field_name)
             
             if limit_key in limits:
                 new_fields[field_name] = (
-                    field_info.type_,
+                    field_info.annotation,
                     Field(
-                        description=field_info.field_info.description,
+                        description=field_info.description,
                         min_length=limits[limit_key]["min"],
                         max_length=limits[limit_key]["max"]
                     )
                 )
             else:
                 # Keep original field if no limit config
-                new_fields[field_name] = (field_info.type_, field_info.field_info)
+                new_fields[field_name] = (field_info.annotation, field_info)
         else:
             # Keep original field
-            new_fields[field_name] = (field_info.type_, field_info.field_info)
+            new_fields[field_name] = (field_info.annotation, field_info)
     
     # Create new model class
     model_name = f"{base_model.__name__}_{mode}"
