@@ -320,14 +320,12 @@ class GeneratePresentationHandler(FetchAssetsOnPresentationGenerationMixin):
                 theme=self.theme
             )
             
-            export_request_body = {
-                "presentation_id": self.presentation_id,
-                "pptx_model": pptx_model.model_dump()
-            }
-            
             print("-" * 40)
             print("Exporting Presentation")
-            export_request = ExportAsRequest(**export_request_body)
+            export_request = ExportAsRequest(
+                presentation_id=self.presentation_id,
+                pptx_model=pptx_model
+            )
 
             presentation_and_path = await ExportAsPptxHandler(export_request).post(
                 logging_service, log_metadata
